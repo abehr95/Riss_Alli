@@ -4,6 +4,8 @@ import sys
 import csv
 from os import walk
 import ast
+from fastkml import kml
+from shapely.geometry import Point, LineString, Polygon
 
 trip_differentiator = 100
 #unix time: import datetime library
@@ -163,7 +165,7 @@ class RawDataManager:
 				if id_ not in self.trips.keys():
 					self.trips[id_] = {}
 				self.trips[id_][sensor] = rawData[sensor][id_]
-				 
+
 	def get_trips():
 		return self.trips
 
@@ -204,7 +206,26 @@ class RawDataManager:
 
 class Map:
 
-	graph = {}
+	def __init__(self, path_):
+		kml_object = kml.KML()
+		self.path = path_
+
+	def kml_to_string(self):
+		with open(self.path, 'r') as myfile:
+			mapInfo=myfile.read()	
+		return mapInfo
+	
+	def create_kml_object(self):
+		self.kml_object.from_string(self.kml_to_string())
+
+	def list_features(self):
+		print list(self.kml_object.features())
+
+
+
+
+
+#graph = {}
 
 # def save_detectors():
 # 	for detector in get_files('.dat'):

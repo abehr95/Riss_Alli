@@ -11,26 +11,25 @@ trip_differentiator = 100
 class FileManage:
 
 	def __init__(self, file_type, path):
-        self.file_type = file_type
-        self.file_data = {}
-        self.path = path
-        self.all_files = []
+		self.file_type = file_type
+		self.file_data = {}
+		self.path = path
+		self.all_files = []
 
-	def get_files(file_type):
+	def get_files(self):
 		f = []
 		for (dirpath, dirnames, filenames) in walk(self.path):
 			f.extend(filenames)
 			break
-
 		g = []
 		for el in f:
 			self.all_files.append(el)
-			if file_type in el:
+			if self.file_type in el:
 				if 'trips' not in el:
 					g.append(el)
 		return g
 
-	def add_data(sensor, data):
+	def add_data(self,sensor, data):
 		if sensor not in self.file_data.keys():
 			self.file_data[sensor] = data
 		else:
@@ -42,7 +41,7 @@ class FileManage:
 						if time not in self.file_data[sensor][id_]:
 							self.file_data[sensor][id_] = self.file_data[sensor][id_].append(data[id_])
 
-	def load_dat(x):
+	def load_dat(self,x):
 		array= np.loadtxt(x, dtype = 'str', delimiter='\n')
 		data = []
 		for el in array:
@@ -50,55 +49,57 @@ class FileManage:
 			data.append(d)
 		return data
 
-	def is_empty(any_structure):
+	def is_empty(self,any_structure):
 	    if any_structure:
 	        return False
 	    else:
 	        return True
 
-	def get_id_earliest_time(_data):
+	def get_id_earliest_time(self,_data):
 		weakest_signal = {}
-		# for entry in _data:
-		if is_empty(entry["data"]) == False:
-			_id = entry["addr"]
-			time = entry["time"] + entry["data"][0][0]
-			if weakest_signal.has_key(_id):
-				weakest_signal[_id] = weakest_signal[_id].append(time)
-			else:
-				weakest_signal[_id] = [time]
+		for entry in _data:
+			if self.is_empty(entry["data"]) == False:
+				_id = entry["addr"]
+				time = entry["time"] + entry["data"][0][0]
+				if weakest_signal.has_key(_id):
+					times = weakest_signal[_id] 
+				else:
+					times = []
+				times.append(time)
+				weakest_signal[_id] = times
 		return weakest_signal
 
-	def load_all_files():
-		files = get_files(self.file_type)
+	def load_all_files(self):
+		files = self.get_files()
 		if self.file_type == ".dat":
 			for file_ in files:
-				data = load_dat(file_)
-				times = get_id_earliest_time(data)
-				if is_empty(times) == False:
-					self.file_data[file_[:-4]] = times
-		if self.file_type == ".csv":
+				data = self.load_dat(file_)
+				times = self.get_id_earliest_time(data)
+				if self.is_empty(times) == False:
+					self.file_data[float(file_[:-4])] = times
+		elif self.file_type == ".csv":
 			for file_ in files:
-				load_csv(file_)
+				self.file_data[float(file_[:-4])] = self.load_csv(file_)
 		else:
 			raise ValueError('Cannot load file type: ' + self.file_type) 
 
 
-	def load_csv(x):
+	def load_csv(self,x):
 		id_data = {}
 		with open(x, 'rb') as f:
 			reader_ = csv.reader(f, delimiter=';')
 			id_times = list(reader_)
 			for data in id_times:
 				time_list = ast.literal_eval(data[1])
-				time_id = [[time,x[:-4]] for time in time_list]
-				id_data[data[0]]= time_id
+				#time_id = [[time,x[:-4]] for time in time_list]
+				id_data[data[0]]= time_list
 		return id_data
 
-	def get_data():
+	def get_data(self):
 		return self.file_data
 
-	def save_all():
-		for sensor in self.file_data.keys()
+	def save_all(self):
+		for sensor in self.file_data.keys():
 			id_data = self.file_data[sensor]
 			with open(sensor + ".csv", 'wb') as f:
 			    writer = csv.writer(f)
@@ -106,7 +107,7 @@ class FileManage:
 			    for row in id_data.iteritems():
 			        writer.writerow(row)
 
-	def save_sensor(sensor):
+	def save_sensor(self,sensor):
 		sensor_name = str(sensor)
 		if sensor_name in self.file_data.keys():
 			id_data = self.file_data[sensor]
@@ -115,9 +116,10 @@ class FileManage:
 			    writer = csv.writer(f, delimiter=';')
 			    for row in id_data.iteritems():
 			        writer.writerow(row)
-		else raise ValueError('Cannot save file: ' + sensor_name + '. It does not exist')
+		else:
+			raise ValueError('Cannot save file: ' + sensor_name + '. It does not exist')
 
-	def get_all_files():
+	def get_all_files(self):
 		return self.all_files
 
 
@@ -137,15 +139,15 @@ class RawDataManager:
 
 	##uses FileManager class to retrieve sensor data 
 	#from dat file to fill rawdata. save all files into csv form.
-	def get_raw_data_from_dat():
-		dat_object = FileManage(".dat", path_)q	
+	def data_dat(self):
+		dat_object = FileManage(".dat", self.path)
 		dat_object.load_all_files()
 		self.raw_data = dat_object.get_data()
 		dat_object.save_all()
 
 	#gets data to sill raw_data object from csv file. 
-	def get_raw_data_from_csv():
-		dat_object = FileManage(".csv", path_)
+	def data_csv(self):
+		dat_object = FileManage(".csv", self.path)
 		dat_object.load_all_files()
 		self.raw_data = dat_object.get_data()
 
@@ -154,11 +156,16 @@ class RawDataManager:
 		dat_object.save_sensor(sensor_)
 
 	#trips data is created by sorting data into {id1:{sensor1:[time1, time2...]. sinsor2:[time1, time2, time3..]., ..}, id2}
-	def create_detector_dictionary():
+	def create_detector_dictionary(self):
 		rawData = self.raw_data
 		for sensor in rawData.keys():
 			for id_ in rawData[sensor].keys():
-				self.trips[id_][sensor] = rawData[sensor][id_] 
+				if id_ not in self.trips.keys():
+					self.trips[id_] = {}
+				self.trips[id_][sensor] = rawData[sensor][id_]
+				 
+	def get_trips():
+		return self.trips
 
 
 	#NOT PUT INTO CLASSES DEF. How do i handle list of times. how do i handle determining valid trip???
@@ -174,7 +181,7 @@ class RawDataManager:
 		return ids
 		'''
 
-	def split_trips():
+	def split_trips(self):
 		'''
 		all_data = create_detector_dictionary()
 		trip_number = 1

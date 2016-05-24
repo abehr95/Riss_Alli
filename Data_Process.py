@@ -207,7 +207,7 @@ class RawDataManager:
 class Map:
 
 	def __init__(self, path_):
-		kml_object = kml.KML()
+		self.kml_object = kml.KML()
 		self.path = path_
 
 	def kml_to_string(self):
@@ -219,7 +219,7 @@ class Map:
 		self.kml_object.from_string(self.kml_to_string())
 
 	def list_features(self):
-		print list(self.kml_object.features())
+		print self.kml_object.to_string(prettyprint=True)
 
 
 

@@ -4,10 +4,13 @@ import sys
 import csv
 from os import walk
 import ast
+from datetime import datetime
+from datetime import timedelta
 from fastkml import kml
 from shapely.geometry import Point, LineString, Polygon
+from Graph import CreateGraph
 
-trip_differentiator = 100
+trip_differentiator = 15
 #unix time: import datetime library
 
 class FileManage:
@@ -134,10 +137,14 @@ class RawDataManager:
 
 		#rawdata will be filled according to {sensor:{ida:[time1, time2,...], idb:[time1, time2, time3....], ...}, sensor 2:{}}
 
+		self.detector_time = {}
 		self.trips = {}
 		self.path = path_
 		self.raw_data = {}
-		dat_object = "None"
+		self.dat_object = "None"
+		self.valid_connections = {}
+		self.graph = "None"
+
 
 	##uses FileManager class to retrieve sensor data 
 	#from dat file to fill rawdata. save all files into csv form.
@@ -153,21 +160,29 @@ class RawDataManager:
 		dat_object.load_all_files()
 		self.raw_data = dat_object.get_data()
 
-	#saves single sensor files
-	def save_sensor(sensor_):
-		dat_object.save_sensor(sensor_)
-
 	#trips data is created by sorting data into {id1:{sensor1:[time1, time2...]. sinsor2:[time1, time2, time3..]., ..}, id2}
 	def create_detector_dictionary(self):
 		rawData = self.raw_data
+		i = 0
 		for sensor in rawData.keys():
 			for id_ in rawData[sensor].keys():
-				if id_ not in self.trips.keys():
-					self.trips[id_] = {}
-				self.trips[id_][sensor] = rawData[sensor][id_]
+				for time in rawData[sensor][id_]:
+					if id_ not in self.detector_time.keys():
+						self.detector_time[id_] = {}
+					self.detector_time[id_][(str(i), time)] = str(int(sensor))
+					i = i + 1
 
-	def get_trips():
-		return self.trips
+	def get_trips(self):
+		#for key in self.trips:
+			#print key, self.trips[key]
+		print len(self.trips)
+		#for key in self.valid_connections:
+			#print key, self.valid_connections[key]
+		print len(self.valid_connections)
+
+
+	def get_detector_time(self):
+		print self.detector_time
 
 
 	#NOT PUT INTO CLASSES DEF. How do i handle list of times. how do i handle determining valid trip???
@@ -184,42 +199,78 @@ class RawDataManager:
 		'''
 
 	def split_trips(self):
-		'''
-		all_data = create_detector_dictionary()
-		trip_number = 1
-		trip_dictionary = {}
-		for id_ in all_data.keys():
-			times = all_data[id_]
-			i = 1
-			trip = []
-			while i < len(times):
-				#print times[i] , times[i-1] , id_, 
-				time_between = times[i][0]-times[i-1][0]
-				trip.append(times[i-1])
-				if time_between >= trip_differentiator:
-					trip_dictionary['trip_' + str(trip_number)] = [id_, trip]
-					trip_number = trip_number + 1
-					trip = []
+		all_data = self.detector_time
+		trip_number = 0
+		for _id in all_data:
+			trip = {}
+			id_info = all_data[_id]
+			index_time = sorted(id_info, key = lambda x: x[-1])  
+			i = 0
+
+			tripmin = index_time[0][1]
+			while i < len(index_time)-1:
+				trip[(index_time[i][1], str(i))] = id_info[index_time[i]]
+
+				(index1, t1) = index_time[i]
+				(index2, t2) = index_time[i+1]
+				time1 = datetime.utcfromtimestamp(t1)
+				time2 = datetime.utcfromtimestamp(t2)
+				diff = time2 - time1
+				
+				if diff.total_seconds() >= trip_differentiator*60:
+					self.trips[(_id,tripmin)] = trip
+					tripmin = index_time[i+1][0]
+					trip = {} 
+
 				i = i+1
-		return trip_dictionary
-		'''
 
-class Map:
+			trip[(index_time[len(index_time)-1][1], str(len(index_time)-1))] = id_info[index_time[len(index_time)-1]]
+			self.trips[(_id,tripmin)] = trip
 
-	def __init__(self, path_):
-		self.kml_object = kml.KML()
-		self.path = path_
+	def check_trips(self, kml):
+		self.graph = CreateGraph()
+		self.graph.graph_from_file(kml)
+		self.graph.create_graph()
+		for ids in self.trips:
+			if len(self.trips[ids]) > 1:
+				checks = []
+				times = sorted(self.trips[ids])
+				i = 0
+				while i < len(times)-1:
+					sensor1 = self.trips[ids][times[i]]
+					sensor2 = self.trips[ids][times[i+1]]
+					check = self.graph.check_order(sensor1,sensor2)
+					checks.append(check)
+					i = i+1
 
-	def kml_to_string(self):
-		with open(self.path, 'r') as myfile:
-			mapInfo=myfile.read()	
-		return mapInfo
+				if all(x==checks[0] for x in checks) == True:
+					if checks[0] == True:
+						self.valid_connections[ids] = self.trips[ids]
+
+# class Map:
+
+# 	def __init__(self, path_):
+# 		self.kml_object = kml.KML()
+# 		self.path = path_
+
+# 	def kml_to_string(self):
+# 		with open(self.path, 'r') as myfile:
+# 			mapInfo=myfile.read()	
+# 		return mapInfo
 	
-	def create_kml_object(self):
-		self.kml_object.from_string(self.kml_to_string())
+# 	def create_kml_object(self):
+# 		self.kml_object.from_string(self.kml_to_string())
 
-	def list_features(self):
-		print self.kml_object.to_string(prettyprint=True)
+# 	def list_features(self):
+# 		print self.kml_object.to_string(prettyprint=True)
+
+rdm = RawDataManager('/Users/allibehr/Desktop/cmr/DataProcess')
+rdm.data_csv()
+rdm.create_detector_dictionary()
+#rdm.get_detector_time()
+rdm.split_trips()
+rdm.check_trips("SRIB.kml")
+rdm.get_trips()
 
 
 

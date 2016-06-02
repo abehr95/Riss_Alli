@@ -296,27 +296,58 @@ class RawDataManager:
 		i = 0
 		iseq = 0
 		diff = len(trip)-len(seq)
-		while i < diff:
-			if self.check_sensor(seq[iseq],trip[i][1]) == True:	
+		while i <= diff:
+			if self.check_sensor(seq[0],trip[i][1]) == True:	
 				index = i
 				iseq = iseq + 1
 				i = i + 1
 				true = 1
-				for time,sensor in trip[i:i+len(seq)]:
-					if true == len(seq):
-						return (True, trip[index:i])
-					print seq[iseq]
-					print sensor 
-					if self.check_sensor(seq[iseq],sensor) == False:
-						iseq = 0
+				search = len(seq) + index
+	 			while i < search:
+				#for time,sensor in trip[i:i+len(seq)]:
+					if self.check_sensor(seq[iseq],trip[i][1]) == False:
+						i = i-1
 						break
 					else:
 						true = true + 1
-					iseq = iseq + 1
-					i = i + 1
+						iseq = iseq + 1
+						i = i + 1
+					if true == len(seq):
+						return (True, trip[index:i])
+			iseq = 0
 			i = i + 1
 			
 		return (False,None)
+
+	# def check_sequence(self,trip,seq):
+	# 	index = None
+	# 	i = 0
+	# 	iseq = 0
+	# 	diff = len(trip)-len(seq)
+	# 	while i <= diff:
+	# 		if self.check_sensor(seq[iseq],trip[i][1]) == True:	
+	# 			index = i
+	# 			iseq = iseq + 1
+	# 			i = i + 1
+	# 			true = 1
+	# 			search = len(seq) - index
+	# 			while i < search:
+	# 			#for time,sensor in trip[i:i+len(seq)]:
+	# 				if true == len(seq):
+	# 					return (True, trip[index:i]) 
+	# 				if self.check_sensor(seq[iseq],trip[i][1]) == False:
+	# 					break
+	# 				else:
+	# 					true = true + 1
+	# 					#if type(seq[iseq]) == tuple or type(seq[iseq]) == list:
+	# 						#if self.check_sensor(seq[iseq+1],trip[i+1][1]) == True:
+	# 							#i = i + 1
+	# 				iseq = iseq + 1
+	# 				i = i + 1
+	# 		iseq = 0
+	# 		i = i + 1
+			
+	# 	return (False,None)
 
 	def sensor_in_trip(self, sensors):
 		trips = {}
@@ -344,6 +375,7 @@ rdm = RawDataManager('/Users/allibehr/Desktop/cmr/DataProcess')
 #rdm.check_trips("SRIB.kml")
 #rdm.get_trips()
 rdm.load_sorted_trips('SortedTrips.csv')
-res = rdm.sensor_in_trip(['139','140',('128','130'),('120','129'),'119',('118','117')])
+#res = rdm.sensor_in_trip(['139','140',('128','130'),('120','129'),'119',('118','117')])
+res = rdm.sensor_in_trip(['128','130'])
 print res
 print len(res)

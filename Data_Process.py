@@ -9,6 +9,7 @@ from datetime import timedelta
 from fastkml import kml
 from shapely.geometry import Point, LineString, Polygon
 from Graph import CreateGraph
+csv.field_size_limit(sys.maxsize)
 
 trip_differentiator = 15
 #unix time: import datetime library
@@ -30,7 +31,7 @@ class FileManage:
 		for el in f:
 			self.all_files.append(el)
 			if self.file_type in el:
-				if 'trips' not in el:
+				if 'SortedTrips' not in el:
 					g.append(el)
 		return g
 
@@ -80,11 +81,15 @@ class FileManage:
 			for file_ in files:
 				data = self.load_dat(file_)
 				times = self.get_id_earliest_time(data)
+				print "Earlist Time Retrieved for ", file_
 				if self.is_empty(times) == False:
 					self.file_data[float(file_[:-4])] = times
 		elif self.file_type == ".csv":
 			for file_ in files:
-				self.file_data[float(file_[:-4])] = self.load_csv(file_)
+				if len(file_) == 7:
+					print "Loading", file_
+					self.file_data[float(file_[:-4])] = self.load_csv(file_)
+
 		else:
 			raise ValueError('Cannot load file type: ' + self.file_type) 
 
@@ -106,23 +111,18 @@ class FileManage:
 	def save_all(self):
 		for sensor in self.file_data.keys():
 			id_data = self.file_data[sensor]
-			with open(sensor + ".csv", 'wb') as f:
+			with open(str(int(sensor)) + ".csv", 'wb') as f:
 			    writer = csv.writer(f)
 			    writer = csv.writer(f, delimiter=';')
 			    for row in id_data.iteritems():
 			        writer.writerow(row)
 
-	def save_sensor(self,sensor):
-		sensor_name = str(sensor)
-		if sensor_name in self.file_data.keys():
-			id_data = self.file_data[sensor]
-			with open(sensor + ".csv", 'wb') as f:
-			    writer = csv.writer(f)
-			    writer = csv.writer(f, delimiter=';')
-			    for row in id_data.iteritems():
-			        writer.writerow(row)
-		else:
-			raise ValueError('Cannot save file: ' + sensor_name + '. It does not exist')
+	def save_dict(self,dict_, name, del_):
+		with open(name + ".csv", 'wb') as f:
+		    writer = csv.writer(f)
+		    writer = csv.writer(f, delimiter=del_)
+		    for row in dict_.iteritems():
+		        writer.writerow(row)
 
 	def get_all_files(self):
 		return self.all_files
@@ -149,22 +149,24 @@ class RawDataManager:
 	##uses FileManager class to retrieve sensor data 
 	#from dat file to fill rawdata. save all files into csv form.
 	def data_dat(self):
-		dat_object = FileManage(".dat", self.path)
-		dat_object.load_all_files()
-		self.raw_data = dat_object.get_data()
-		dat_object.save_all()
+		self.dat_object = FileManage(".dat", self.path)
+		self.dat_object.load_all_files()
+		self.raw_data = self.dat_object.get_data()
+		self.dat_object.save_all()
 
 	#gets data to sill raw_data object from csv file. 
 	def data_csv(self):
-		dat_object = FileManage(".csv", self.path)
-		dat_object.load_all_files()
-		self.raw_data = dat_object.get_data()
+		self.dat_object = FileManage(".csv", self.path)
+		self.dat_object.load_all_files()
+		self.raw_data = self.dat_object.get_data()
 
 	#trips data is created by sorting data into {id1:{sensor1:[time1, time2...]. sinsor2:[time1, time2, time3..]., ..}, id2}
 	def create_detector_dictionary(self):
+		print "Sorting Data by Ids..."
 		rawData = self.raw_data
 		i = 0
 		for sensor in rawData.keys():
+			print "      sorting id for sensor", sensor
 			for id_ in rawData[sensor].keys():
 				for time in rawData[sensor][id_]:
 					if id_ not in self.detector_time.keys():
@@ -172,33 +174,41 @@ class RawDataManager:
 					self.detector_time[id_][(str(i), time)] = str(int(sensor))
 					i = i + 1
 
+	def save_detector_dictionary(self,name):
+		if len(name) > 7:
+			self.dat_object.save_dict(self.detector_time, name, ';')
+		print "Saved Sorted Trips as", name
+
+	def load_trips(self, filename):
+		if self.dat_object == "None":
+			self.dat_object = FileManage(".csv", self.path)
+		id_data = {}
+		with open(filename, 'rb') as f:
+			reader_ = csv.reader(f, delimiter=';')
+			id_times = list(reader_)
+			for data in id_times:
+				time_list = ast.literal_eval(data[1])
+				#time_id = [[time,x[:-4]] for time in time_list]
+				id_data[data[0]]= time_list
+		self.detector_time = id_data
+
+		
 	def get_trips(self):
 		#for key in self.trips:
 			#print key, self.trips[key]
-		print len(self.trips)
+		print "Total trips:", len(self.trips)
 		#for key in self.valid_connections:
 			#print key, self.valid_connections[key]
-		print len(self.valid_connections)
+		print "Total Valid Trips:", len(self.valid_connections)
 
 
 	def get_detector_time(self):
 		print self.detector_time
 
 
-	#NOT PUT INTO CLASSES DEF. How do i handle list of times. how do i handle determining valid trip???
-	def sort_all_data(data):
-		'''
-		ids = {}
-		for detector in data.keys():
-			for id_ in detector[1].items():
-				if ids.has_key(id_[0]):
-					ids[id_[0]]=ids[id_0].append({detector[0]:id_[1]})
-				else:
-					ids[id_[0]]=[{detector[0]:id_[1]}]
-		return ids
-		'''
-
+	#{(id, start-time of trip):{(time,node_index):senosr....},...}
 	def split_trips(self):
+		print "Splitting trips from travel times..."
 		all_data = self.detector_time
 		trip_number = 0
 		for _id in all_data:
@@ -206,28 +216,33 @@ class RawDataManager:
 			id_info = all_data[_id]
 			index_time = sorted(id_info, key = lambda x: x[-1])  
 			i = 0
+			index = 0
 
 			tripmin = index_time[0][1]
 			while i < len(index_time)-1:
-				trip[(index_time[i][1], str(i))] = id_info[index_time[i]]
-
+				trip[(index_time[i][1], str(index))] = id_info[index_time[i]]
+				index = index + 1
 				(index1, t1) = index_time[i]
 				(index2, t2) = index_time[i+1]
 				time1 = datetime.utcfromtimestamp(t1)
 				time2 = datetime.utcfromtimestamp(t2)
 				diff = time2 - time1
+
 				
 				if diff.total_seconds() >= trip_differentiator*60:
 					self.trips[(_id,tripmin)] = trip
-					tripmin = index_time[i+1][0]
+					tripmin = index_time[i+1][1]
 					trip = {} 
+					index = 0
+
 
 				i = i+1
 
-			trip[(index_time[len(index_time)-1][1], str(len(index_time)-1))] = id_info[index_time[len(index_time)-1]]
+			trip[(index_time[len(index_time)-1][1], str(index))] = id_info[index_time[len(index_time)-1]]
 			self.trips[(_id,tripmin)] = trip
 
 	def check_trips(self, kml):
+		print "Checking Order of Sensors in Trips..."
 		self.graph = CreateGraph()
 		self.graph.graph_from_file(kml)
 		self.graph.create_graph()
@@ -247,54 +262,88 @@ class RawDataManager:
 					if checks[0] == True:
 						self.valid_connections[ids] = self.trips[ids]
 
-# class Map:
+	def save_sorted_trips(self, name):
+		if len(name) > 7:
+			self.dat_object.save_dict(self.valid_connections, name, ';')
+		print "Saved Sorted Trips as", name + ".csv"
 
-# 	def __init__(self, path_):
-# 		self.kml_object = kml.KML()
-# 		self.path = path_
+	def load_sorted_trips(self, filename):
+		if self.dat_object == "None":
+			self.dat_object = FileManage(".csv", self.path)
+		id_data = {}
+		with open(filename, 'rb') as f:
+			reader_ = csv.reader(f, delimiter=';')
+			id_times = list(reader_)
+			for data in id_times:
+				time_list = ast.literal_eval(data[1])
+				#time_id = [[time,x[:-4]] for time in time_list]
+				id_data[data[0]]= time_list
+		self.valid_connections = id_data
 
-# 	def kml_to_string(self):
-# 		with open(self.path, 'r') as myfile:
-# 			mapInfo=myfile.read()	
-# 		return mapInfo
-	
-# 	def create_kml_object(self):
-# 		self.kml_object.from_string(self.kml_to_string())
+	def check_sensor(self,sensor,check):
+		if type(sensor) == tuple or type(sensor)== list:
+			for item in sensor:
+				if item == check:
+					return True
+			return False
+		else:
+			if sensor == check:
+				return True
+			return False
 
-# 	def list_features(self):
-# 		print self.kml_object.to_string(prettyprint=True)
+	def check_sequence(self,trip,seq):
+		index = None
+		i = 0
+		iseq = 0
+		diff = len(trip)-len(seq)
+		while i < diff:
+			if self.check_sensor(seq[iseq],trip[i][1]) == True:	
+				index = i
+				iseq = iseq + 1
+				i = i + 1
+				true = 1
+				for time,sensor in trip[i:i+len(seq)]:
+					if true == len(seq):
+						return (True, trip[index:i])
+					print seq[iseq]
+					print sensor 
+					if self.check_sensor(seq[iseq],sensor) == False:
+						iseq = 0
+						break
+					else:
+						true = true + 1
+					iseq = iseq + 1
+					i = i + 1
+			i = i + 1
+			
+		return (False,None)
+
+	def sensor_in_trip(self, sensors):
+		trips = {}
+		first_sensor = sensors[0]
+		trip_num = 1
+		for id_, trip in self.valid_connections.items():
+			for signal in trip.values():
+				if self.check_sensor(first_sensor, signal) == True:
+					sorted_trip = sorted(trip.items())
+					res = self.check_sequence(sorted_trip,sensors)
+					if res[0] == True:
+						trip_info = res[1]
+						trips[("Trip " + str(trip_num),id_,trip_info[0][0])] = trip_info
+						trip_num = trip_num + 1
+		return trips
+
 
 rdm = RawDataManager('/Users/allibehr/Desktop/cmr/DataProcess')
-rdm.data_csv()
-rdm.create_detector_dictionary()
+#rdm.data_csv()
+#rdm.create_detector_dictionary()
+#rdm.save_detector_dictionary("Detectors") 
 #rdm.get_detector_time()
-rdm.split_trips()
-rdm.check_trips("SRIB.kml")
-rdm.get_trips()
-
-
-
-
-
-#graph = {}
-
-# def save_detectors():
-# 	for detector in get_files('.dat'):
-# 		save(sort_data(load_dat(detector)),detector)
-
-# def save_trips():
-# 	save(split_trips(),'trips.csv')
-
-# def get_coordinates():
-# 	filenames = get_files('.kml')
-# 	for filename in filenames:
-# 		from pykml import parser
-# 		root = parser.fromstring(open(filename, 'r').read())
-# 		print root.Document.Placemark.Point.coordinates
-
-# def main():
-# 	save_detectors()
-# 	save_trips()
-# 	get_coordinates()
-
-# main()
+#rdm.load_trips("Detectors.csv")
+#rdm.split_trips()
+#rdm.check_trips("SRIB.kml")
+#rdm.get_trips()
+rdm.load_sorted_trips('SortedTrips.csv')
+res = rdm.sensor_in_trip(['139','140',('128','130'),('120','129'),'119',('118','117')])
+print res
+print len(res)

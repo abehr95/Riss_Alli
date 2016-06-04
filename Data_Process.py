@@ -280,102 +280,67 @@ class RawDataManager:
 				id_data[data[0]]= time_list
 		self.valid_connections = id_data
 
-	def check_sensor(self,sensor,check):
-		if type(sensor) == tuple or type(sensor)== list:
-			for item in sensor:
-				if item == check:
-					return True
-			return False
+	def check_element(self, check1, check2, expect, i):
+		if type(expect) == tuple:
+			res = None
+			if check1[1] == expect[0] or check1[1] == expect[1]:
+				res = check1
+				if check2[1] == expect[0] or check2[1] == expect[1]:
+					res = (check1,check2)
+					i = i + 1
+				return True, i + 1, res
+			return False,  i + 1, None
+
 		else:
-			if sensor == check:
-				return True
-			return False
+			if check1[1] == expect:
+				return True,  i + 1, check1
+			return False, i + 1, None
 
-	def check_sequence(self,trip,seq):
-		index = None
-		i = 0
-		iseq = 0
-		diff = len(trip)-len(seq)
-		while i <= diff:
-			if self.check_sensor(seq[0],trip[i][1]) == True:	
-				index = i
-				iseq = iseq + 1
-				i = i + 1
-				true = 1
-				search = len(seq) + index
-	 			while i < search:
-				#for time,sensor in trip[i:i+len(seq)]:
-					if self.check_sensor(seq[iseq],trip[i][1]) == False:
-						i = i-1
-						break
-					else:
-						true = true + 1
-						iseq = iseq + 1
-						i = i + 1
-					if true == len(seq):
-						return (True, trip[index:i])
-			iseq = 0
-			i = i + 1
-			
-		return (False,None)
-
-	# def check_sequence(self,trip,seq):
-	# 	index = None
-	# 	i = 0
-	# 	iseq = 0
-	# 	diff = len(trip)-len(seq)
-	# 	while i <= diff:
-	# 		if self.check_sensor(seq[iseq],trip[i][1]) == True:	
-	# 			index = i
-	# 			iseq = iseq + 1
-	# 			i = i + 1
-	# 			true = 1
-	# 			search = len(seq) - index
-	# 			while i < search:
-	# 			#for time,sensor in trip[i:i+len(seq)]:
-	# 				if true == len(seq):
-	# 					return (True, trip[index:i]) 
-	# 				if self.check_sensor(seq[iseq],trip[i][1]) == False:
-	# 					break
-	# 				else:
-	# 					true = true + 1
-	# 					#if type(seq[iseq]) == tuple or type(seq[iseq]) == list:
-	# 						#if self.check_sensor(seq[iseq+1],trip[i+1][1]) == True:
-	# 							#i = i + 1
-	# 				iseq = iseq + 1
-	# 				i = i + 1
-	# 		iseq = 0
-	# 		i = i + 1
-			
-	# 	return (False,None)
-
-	def sensor_in_trip(self, sensors):
+	def check_seq(self, seq):
 		trips = {}
-		first_sensor = sensors[0]
 		trip_num = 1
+		tups = 0
 		for id_, trip in self.valid_connections.items():
-			for signal in trip.values():
-				if self.check_sensor(first_sensor, signal) == True:
-					sorted_trip = sorted(trip.items())
-					res = self.check_sequence(sorted_trip,sensors)
-					if res[0] == True:
-						trip_info = res[1]
-						trips[("Trip " + str(trip_num),id_,trip_info[0][0])] = trip_info
-						trip_num = trip_num + 1
+			s_trip = sorted(trip.items())
+			sorts = []
+			i1 = 0
+			length = len(s_trip)-len(seq)
+			if len(s_trip) >= len(seq):
+				while i1 <= length:
+					for sensor in seq:
+						if i1 < len(s_trip)-1:
+							check = self.check_element(s_trip[i1], s_trip[i1+1], sensor, i1)
+							if check[0] == True:
+								i1 = check[1]
+								sorts.append(check[2])
+							else:
+								break
+							if len(sorts) == len(seq):
+								trips[('Trip ' + str(trip_num),ast.literal_eval(id_)[0],sorts[0])] = sorts
+								trip_num = trip_num + 1
+								sorts = []
+						if i1 == len(s_trip)-1:
+							check = self.check_element(s_trip[i1], 'None', sensor, i1)
+							if check[0] == True:
+								sorts.append(check[2])
+							else:
+								break
+							if len(sorts) == len(seq):
+								trips[('Trip ' + str(trip_num),ast.literal_eval(id_)[0],sorts[0])] = sorts
+								trip_num = trip_num + 1
+								sorts = []
+					i1 = i1 + 1
+					sorts = []	
 		return trips
 
-
 rdm = RawDataManager('/Users/allibehr/Desktop/cmr/DataProcess')
-#rdm.data_csv()
-#rdm.create_detector_dictionary()
-#rdm.save_detector_dictionary("Detectors") 
-#rdm.get_detector_time()
-#rdm.load_trips("Detectors.csv")
-#rdm.split_trips()
-#rdm.check_trips("SRIB.kml")
-#rdm.get_trips()
+
 rdm.load_sorted_trips('SortedTrips.csv')
-#res = rdm.sensor_in_trip(['139','140',('128','130'),('120','129'),'119',('118','117')])
-res = rdm.sensor_in_trip(['128','130'])
+print len(rdm.valid_connections)
+res = rdm.check_seq(['139','140',('128','130'),('120','129'),'119',('118','117')])
+#res = rdm.sensor_in_trip(['140',('128','130')])
+#rdm.check_seq_penn()
+#res = rdm.check_seq_penn()
 print res
 print len(res)
+

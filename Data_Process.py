@@ -193,13 +193,8 @@ class RawDataManager:
 		self.detector_time = id_data
 
 		
-	def get_trips(self):
-		#for key in self.trips:
-			#print key, self.trips[key]
-		print "Total trips:", len(self.trips)
-		#for key in self.valid_connections:
-			#print key, self.valid_connections[key]
-		print "Total Valid Trips:", len(self.valid_connections)
+	def get_valid_trips(self):
+		return self.valid_connections
 
 
 	def get_detector_time(self):
@@ -316,7 +311,7 @@ class RawDataManager:
 							else:
 								break
 							if len(sorts) == len(seq):
-								trips[('Trip ' + str(trip_num),ast.literal_eval(id_)[0],sorts[0])] = sorts
+								trips[('Trip ' + str(trip_num),ast.literal_eval(id_)[0],self.start_time(sorts))] = sorts
 								trip_num = trip_num + 1
 								sorts = []
 						if i1 == len(s_trip)-1:
@@ -326,21 +321,31 @@ class RawDataManager:
 							else:
 								break
 							if len(sorts) == len(seq):
-								trips[('Trip ' + str(trip_num),ast.literal_eval(id_)[0],sorts[0])] = sorts
+								trips[('Trip ' + str(trip_num),ast.literal_eval(id_)[0],self.start_time(sorts))] = sorts
 								trip_num = trip_num + 1
 								sorts = []
 					i1 = i1 + 1
 					sorts = []	
 		return trips
 
-rdm = RawDataManager('/Users/allibehr/Desktop/cmr/DataProcess')
+	def start_time(self,timelist):
+		if type(timelist[0][1]) == tuple:
+			start_time = sorted(timelist[0], key = lambda x: x[-1])[0][0][0]
+		else:
+			start_time = timelist[0][0][0]
+		return start_time
 
-rdm.load_sorted_trips('SortedTrips.csv')
-print len(rdm.valid_connections)
-res = rdm.check_seq(['139','140',('128','130'),('120','129'),'119',('118','117')])
-#res = rdm.sensor_in_trip(['140',('128','130')])
-#rdm.check_seq_penn()
-#res = rdm.check_seq_penn()
-print res
-print len(res)
+# rdm = RawDataManager('/Users/allibehr/Desktop/cmr/DataProcess')
+# rdm.load_trips('Detectors.csv')
+# rdm.split_trips()
+# rdm.check_trips('SRIB.kml')
+# rdm.save_sorted_trips('SortedTrips')
+# rdm.load_sorted_trips('SortedTrips.csv')
+# print len(rdm.valid_connections)
+# res = rdm.check_seq(['139', '140', ('128', '130'), ('120', '129'), '119', ('118', '117')])
+# #res = rdm.sensor_in_trip(['140',('128','130')])
+# #rdm.check_seq_penn()
+# #res = rdm.check_seq_penn()
+# print res
+# print len(res)
 

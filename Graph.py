@@ -92,6 +92,8 @@ class CreateGraph:
 		return False
 
 	def check_order(self,one,two):
+		if one == two:
+			return False
 		if self.check_links(one,two) == True:
 			return True
 		if self.check_second_link(one,two) == True:

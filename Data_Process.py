@@ -11,7 +11,8 @@ from shapely.geometry import Point, LineString, Polygon
 from Graph import CreateGraph
 csv.field_size_limit(sys.maxsize)
 
-trip_differentiator = 15
+trip_differentiator = 10
+max_rep = 3
 #unix time: import datetime library
 
 class FileManage:
@@ -144,6 +145,11 @@ class RawDataManager:
 		self.dat_object = "None"
 		self.valid_connections = {}
 		self.graph = "None"
+		self.number_trips = None
+		self.valid_trips = None
+		self.invalid_trips = None
+		self.repeats = 0
+		self.repeat_rmv = []
 
 
 	##uses FileManager class to retrieve sensor data 
@@ -173,6 +179,14 @@ class RawDataManager:
 						self.detector_time[id_] = {}
 					self.detector_time[id_][(str(i), time)] = str(int(sensor))
 					i = i + 1
+		dels = []
+		for key in self.detector_time:
+			if all(x==self.detector_time[key].values()[0] for x in self.detector_time[key].values()) == True:
+				dels.append(key)
+				self.repeats += 1
+
+		for item in dels:
+			del self.detector_time[item]
 
 	def save_detector_dictionary(self,name):
 		if len(name) > 7:
@@ -196,10 +210,8 @@ class RawDataManager:
 	def get_valid_trips(self):
 		return self.valid_connections
 
-
 	def get_detector_time(self):
 		print self.detector_time
-
 
 	#{(id, start-time of trip):{(time,node_index):senosr....},...}
 	def split_trips(self):
@@ -223,12 +235,12 @@ class RawDataManager:
 				time2 = datetime.utcfromtimestamp(t2)
 				diff = time2 - time1
 
-				
 				if diff.total_seconds() >= trip_differentiator*60:
 					self.trips[(_id,tripmin)] = trip
 					tripmin = index_time[i+1][1]
 					trip = {} 
 					index = 0
+					trip_number += 1
 
 
 				i = i+1
@@ -236,8 +248,12 @@ class RawDataManager:
 			trip[(index_time[len(index_time)-1][1], str(index))] = id_info[index_time[len(index_time)-1]]
 			self.trips[(_id,tripmin)] = trip
 
+		self.number_trips = trip_number
+
 	def check_trips(self, kml):
 		print "Checking Order of Sensors in Trips..."
+		vt = 0
+		it = 0
 		self.graph = CreateGraph()
 		self.graph.graph_from_file(kml)
 		self.graph.create_graph()
@@ -253,9 +269,26 @@ class RawDataManager:
 					checks.append(check)
 					i = i+1
 
+				num_rest = 0
+				for res in checks:
+					if res == 'Resting':
+						num_rest += 1
+				if num_rest > 0:
+					j = 0
+					while j < num_rest-1:
+						checks.remove('Resting')
+						j += 1
+					self.repeat_rmv.append(num_rest)
+
 				if all(x==checks[0] for x in checks) == True:
 					if checks[0] == True:
 						self.valid_connections[ids] = self.trips[ids]
+						vt += 1
+				else:
+					it += 1
+
+		self.valid_trips = vt
+		self.invalid_trips = it
 
 	def save_sorted_trips(self, name):
 		if len(name) > 7:
@@ -335,11 +368,50 @@ class RawDataManager:
 			start_time = timelist[0][0][0]
 		return start_time
 
-# rdm = RawDataManager('/Users/allibehr/Desktop/cmr/DataProcess')
-# rdm.load_trips('Detectors.csv')
-# rdm.split_trips()
-# rdm.check_trips('SRIB.kml')
-# rdm.save_sorted_trips('SortedTrips')
+	def sort_trips_all(self):
+		self.data_csv()
+		self.create_detector_dictionary()
+		self.save_detector_dictionary('Detectors')
+		self.split_trips()
+		self.check_trips('SRIB.kml')
+		self.save_sorted_trips('SortedTrips')
+		self.check_stats()
+
+	def get_num_detectors(self):
+		return len(self.detector_time)
+
+	def get_num_trips(self):
+		return self.number_trips
+
+	def get_check_valid(self):
+		return self.valid_trips
+
+	def get_check_invalid(self):
+		return self.invalid_trips
+
+	def get_removed_repeats(self):
+		return self.repeat_rmv
+
+	def get_repeats(self):
+		return self.repeats
+
+	def check_stats(self):
+		print "Number of MacIDs: ", self.get_num_detectors()
+		print "After Split... Number of Trips: ", self.get_num_trips()
+		print "After Check... Valid Trips: ", self.get_check_valid(), " Invalid Trips: ", self.get_check_invalid()
+		print "Repeats removed from sequence: ", len(self.get_removed_repeats())
+		print "Trips Discard due to repeats over max: ", self.get_repeats()
+		print "Differentiator: ", trip_differentiator
+		print "Repeat Threshold: ", max_rep
+
+
+#rdm = RawDataManager('/Users/allibehr/Desktop/cmr/DataProcess')
+#rdm.data_csv()
+#rdm.create_detector_dictionary()
+#rdm.save_detector_dictionary('Detectors')
+#rdm.split_trips()
+#rdm.check_trips('SRIB.kml')
+#rdm.save_sorted_trips('SortedTrips')
 # rdm.load_sorted_trips('SortedTrips.csv')
 # print len(rdm.valid_connections)
 # res = rdm.check_seq(['139', '140', ('128', '130'), ('120', '129'), '119', ('118', '117')])
@@ -348,4 +420,8 @@ class RawDataManager:
 # #res = rdm.check_seq_penn()
 # print res
 # print len(res)
+
+#import Data_Process
+#rdm = Data_Process.RawDataManager('/Users/allibehr/Desktop/cmr/DataProcess')
+#rdm.sort_trips_all()
 

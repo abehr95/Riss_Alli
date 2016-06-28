@@ -93,7 +93,7 @@ class CreateGraph:
 
 	def check_order(self,one,two):
 		if one == two:
-			return False
+			return "Resting"
 		if self.check_links(one,two) == True:
 			return True
 		if self.check_second_link(one,two) == True:

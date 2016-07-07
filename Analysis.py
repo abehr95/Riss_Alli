@@ -5,6 +5,8 @@ import csv
 import os
 import math
 import random
+from operator import itemgetter, attrgetter
+import Filter
 
 pathname = os.getcwd()
 
@@ -20,14 +22,17 @@ class DataAnalysis:
 		self.sort_bt = []
 		self.forward_split = {}
 		self.backward_split = {}
-		self.organized_R = {}
+		self.outliers = {}
 
 	def load_data(self,file_):
+		"""Loads sorted valid trips from DataProcess class"""
 		self.data_object = RawDataManager(self.path)
 		self.data_object.load_sorted_trips(file_)
 		self.data = self.data_object.get_valid_trips()
 
 	def get_trips(self,sequence):
+		"""finds trips in all valid trips that contain the desired 
+		sequence of sensors where sequence = [sensor1, sensor2....]"""
 		self.forward_trips = self.data_object.check_seq(sequence)
 		print "Foward Trips:", len(self.forward_trips)
 		reverse = sequence
@@ -36,6 +41,8 @@ class DataAnalysis:
 		print "Backward Trips:", len(self.backwards_trips)
 
 	def find_times(self, timelist):
+		"""finds the start time and end time in a list of sensor data, 
+		where some sensors may have two readings. In this case the first sensor is taken"""
 		if type(timelist[0][1]) == tuple:
 			start_time = sorted(timelist[0], key = lambda x: x[-1])[0][0][0]
 		else:
@@ -45,32 +52,32 @@ class DataAnalysis:
 		else:
 			end_time = timelist[-1][0][0]
 
-		diff = self.diff_time(start_time,end_time)
-		return (datetime.utcfromtimestamp(start_time),datetime.utcfromtimestamp(end_time),diff/60.)
+		return (datetime.utcfromtimestamp(start_time),datetime.utcfromtimestamp(end_time))
 
 	def list_times(self, group, type0_ = None):
+		"""for a group of 50 trips, this finds the start time, end time and total time for each trip"""
 		start_times = []
 		end_times = []
-		totals = []
 		for trip in group:
-			(start, end, diff) = self.find_times(trip[1])
+			(start, end) = self.find_times(trip[1])
 			if type0_ == 'time':
 				start = start.time()
 				end = end.time()
 
 			start_times.append(start)
 			end_times.append(end)
-			totals.append(diff)
 
-		return start_times, end_times, totals
+		return start_times, end_times
 
 	def diff_time(self, time1, time2):
+		"""finds the difference in seconds between two timestamps"""
 		start = datetime.utcfromtimestamp(time1)
 		end = datetime.utcfromtimestamp(time2)
 		total_time = end - start
 		return total_time.total_seconds()
 
 	def sort_trips(self,type_ = None):
+		"""sorts trips containing desired sequnce by day and time or just time"""
 		if type_ == 'day' or type_ == None:
 			self.sort_ft = sorted(self.forward_trips.items(), key = lambda x: x[0][2])
 			self.sort_bt = sorted(self.backwards_trips.items(), key = lambda x: x[0][2])
@@ -80,6 +87,7 @@ class DataAnalysis:
 			self.sort_bt = sorted(self.backwards_trips.items(), key = lambda x: datetime.utcfromtimestamp(x[0][2]).time())
 
 	def split_trips(self, group_number, overlap = None):
+		"""splits sorted trips into groups of fifty, if overlap it set to a number, groups will overlap by that number"""
 		tripi = 0
 		group = 1
 		while tripi < len(self.sort_ft):
@@ -92,15 +100,16 @@ class DataAnalysis:
 					i = i+1
 				else:
 					break
+				
 			self.forward_split['Group ' + str(group)] = trips
 			group = group + 1
 			if overlap:
-				if overlap < group_number:
-					i = i - overlap
-				else:
-					raise ValueError, 'overlap value too large' 
-
-			
+				if tripi < len(self.sort_ft):
+					if overlap < group_number:
+						tripi = tripi - overlap
+					else:
+						raise ValueError, 'overlap value too large'
+		
 		tripi = 0
 		group = 1
 		while tripi < len(self.sort_bt):
@@ -115,8 +124,15 @@ class DataAnalysis:
 					break
 			self.backward_split['Group ' + str(group)] = trips
 			group = group + 1
+			if overlap:
+				if tripi < len(self.sort_bt):
+					if overlap < group_number:
+						tripi = tripi - overlap
+					else:
+						raise ValueError, 'overlap value too large'
 
 	def get_avg_stdv(self, timelist):
+		"""returns average and stdv of a list of values (timelist)"""
 		sum_ = 0
 		var = 0.
 		for times in timelist:
@@ -131,6 +147,7 @@ class DataAnalysis:
 		return average, std
 
 	def get_time_value(self,info):
+		"""returns time of sensor detection from sensor list"""
 		if type(info[1]) == tuple:
 			time = sorted(info, key = lambda x: x[-1])[0][0][0]
 		else:
@@ -138,6 +155,7 @@ class DataAnalysis:
 		return time
 
 	def find_R(self,X, Y):
+		"""finds the R value from two lists of link times"""
 
 		if len(X) != len(Y):
 			print X, Y
@@ -159,6 +177,7 @@ class DataAnalysis:
 		return R
 
 	def find_sensor(self, tuple_):
+		"""used to find time traveled on a link, this finds the sensor_name in group sensor data"""
 		if type(tuple_[1]) == tuple:
 			sensors = []
 			for tuples in tuple_:
@@ -167,6 +186,7 @@ class DataAnalysis:
 		return tuple_[1]
 
 	def split_sensors(self, list_):
+		"""splits the time data in a group of 50 into sensors instead of trips"""
 		sensors = {}
 		keys = []
 		for signal in list_[0][1]:
@@ -183,6 +203,7 @@ class DataAnalysis:
 		return sensors, keys
 
 	def time_between(self,sensor_list):
+		"""finds the time between two sensors"""
 		time_values = []
 		sensors, keys = sensor_list
 		for i in xrange(len(keys)-1):
@@ -198,26 +219,64 @@ class DataAnalysis:
 
 		return time_values
 
-	def compile_data(self,dict_, type_ = None):
+	def get_trip_times(self, time_list):
+		trips = {}
+		for i in range(len(time_list[0])):
+			times = [link[i] for link in time_dict]
+			trips[i+1] = times
+		return trips
+
+	def find_totals(self, sensor_list):
+		all_totals = []
+		for j in range(len(sensor_list[0])):
+			total = 0
+			for i in range(len(sensor_list)):
+				total += sensor_list[i][j]
+			all_totals.append(total)
+		return all_totals
+
+	def compile_data(self,dict_, type_ = None, sort = True):
+		"""compiles all data ("R" value, Timespan of group (first starttime: laststarttime)),
+		 the average time and stdv for each link, the average trip time, trip stdv) and 
+		returns in dictionary. Also returns sensor times and total times"""
 		data = {}
 		sensor_times = {}
+		total_time = {}
 		for group in dict_:
 			Rvalues = {}
 			i = 0
 			sensorlist = self.split_sensors(dict_[group])
 			sensors = self.time_between(sensorlist)
+			if sort_:
+				sensor_data = [sen[0] for sen in sensors]
+				times = [time[1] for times in sensors]
+				info = self.get_trip_times(times)
+				print "Info", info
+				fi = Filter.Final(info)
+				trips_new, self.outliers[group] = fi.get_new_trips()
+				#print "New", trips_new
+				#print len(trips_new)
+				temp = []
+				for trip in sorted(trips_new.keys()):
+					for i in range(len(trips_new[trip])):
+						temp.append((sensor_data[i], trips_new[trip][i]))
+				print temp
+				print "Trips Removed from " + group +":", len(self.outliers)
+				sensors = temp
+
 			sensor_times[group] = sensors
+			totals = self.find_totals(sensors)
+			total_time[group] = totals
+
 			while i < len(sensors)-1:
 				(link1,times1) = sensors[i]
 				(link2,times2) = sensors[i+1]
 				link = 'tt_'+link1+'/' + link2
+				#print link
 				Rvalues[link] = self.find_R(times1,times2)
 				i = i + 1
 
-			start, end, totals = self.list_times(dict_[group], type_)
-			print "Start", start
-			print "End", end
-			print "Totals", totals
+			start, end = self.list_times(dict_[group], type_)
 			avgtimes = []
 			for sensor in sensors:
 				avg, stdv = self.get_avg_stdv(sensor[1])
@@ -225,39 +284,47 @@ class DataAnalysis:
 
 			timespan = self.timespan(start)
 			average , stdv = self.get_avg_stdv(totals)
-
+			
 			#, 'Start,End,Total(min)':times, 
-			data[group] = {'R':Rvalues, 'Timespan':timespan, 'Segment:(Average time(sec), Average stdv)': avgtimes, 'Average_trip(min)':average, 'Stdv(min)':stdv, 'Totals': totals}
+			data[group] = {'R':Rvalues, 'Timespan':timespan, 'Segment:(Average time(sec), Average stdv)': avgtimes, 'Average_trip(min)':average, 'Stdv(min)':stdv}
 
-		return data, sensor_times
+		return data, sensor_times, total_time
 
 	def load_segment(self, sensors, type0_ = None):
+		"""loads a segment of grid"""
 		self.load_data('SortedTrips.csv')
 		self.get_trips(sensors)
 		self.sort_trips(type_ = type0_)
 		self.split_trips(50, overlap = 25)
-		foward, forward_time = self.compile_data(self.forward_split,type_ = type0_)
-		backward, backward_time = self.compile_data(self.backward_split,type_ = type0_)
-		return foward, backward, forward_time, backward_time
+		foward, forward_time, tottimes_f = self.compile_data(self.forward_split,type_ = type0_)
+		backward, backward_time, tottimes_b = self.compile_data(self.backward_split,type_ = type0_)
+		return foward, backward, forward_time, backward_time, tottimes_f, tottimes_b
 
 	def get_long(self, sensors, type_ = None, reverse = False):
-		forward, backward, forward_time, backward_time = self.load_segment(sensors, type0_ = type_)
+		"""get the direction of segment with the most trips""" 
+		forward, backward, forward_time, backward_time, tottimes_f, tottimes_b = self.load_segment(sensors, type0_ = type_)
 		if len(forward) >= len(backward):
 			long_ = forward
 			longtime = forward_time
+			l_times = tottimes_f
 			short = backward
 			shorttime = backward_time
+			s_times = tottimes_b
 		else:
 			long_ = backward
 			longtime = backward_time
+			l_times = tottimes_b
 			short = forward
 			shorttime = forward_time
+			s_times = tottimes_f
 
 		if reverse:
 			long_ = short
 			longtime = shorttime
-		return long_, longtime
+			l_times = s_times
+		return long_, longtime, l_times
 
+	"""finds begining and end of list of times"""	
 	def timespan(self,times):
 		s_times = sorted(times)
 		return (s_times[0].isoformat(),s_times[-1].isoformat())
@@ -281,36 +348,11 @@ class DataAnalysis:
 					writer.writeheader()
 					writer.writerow(direction[group]['R'])
 
-	def organize_R(self, bounds, compiled_data):
-		s_bounds = sorted(bounds)
-		s_bounds.insert(0,-1)
-		s_bounds.append(1.000001)
-		o_keys = []
-		for i in xrange(len(s_bounds)-1):
-			if i+1 == len(s_bounds)-1:
-				name = str(s_bounds[i]) + "_to_" +str(1)
-			else:
-				name = str(s_bounds[i]) + "_to_" +str(s_bounds[i+1])
-			self.organized_R[name] = {}
-			o_keys.append(name)
-
-		for group in compiled_data:
-			Rvalue = compiled_data[group]['R']
-			if len(Rvalue) != 1:
-				raise ValueError, 'more than one rvalue for ' + group
-			timespan = self.timespan(compiled_data[group]['Start,End,Total(min)'])
-			average = compiled_data[group]['Average_trip(min)']
-			stdv = compiled_data[group]['Stdv(min)']
-			data = {'Group':group,'Timespan':timespan,'Average':average,'Stdv':stdv}
-			for i in xrange(len(o_keys)):
-				if Rvalue[Rvalue.keys()[0]] >= s_bounds[i] and Rvalue[Rvalue.keys()[0]] < s_bounds[i+1]:
-					self.organized_R[o_keys[i]][Rvalue[Rvalue.keys()[0]]] = data
-					break
-
 	def main(self, streets, type_ = None):
+		"""returns data from a dictionary containing streets: {segmentname:[sensors...], ....}"""
 		for street in streets:
 			da = DataAnalysis(pathname)
-			forward, backward, foward_time, backward_time = da.load_segment(streets[street], type0_ = type_)
+			forward, backward, foward_time, backward_time, tottimes_f, tottimes_b = da.load_segment(streets[street], type0_ = type_)
 			if len(forward) >= len(backward):
 				longest = forward
 			else:
@@ -325,27 +367,67 @@ class Convolve:
 		self.analysis = DataAnalysis(pathname)
 		self.segment = segment_
 		self.times = {}
+		self.links = []
+		self.longtimes = {}
 		self.data = {}
 		self.actual_cdfs = {}
 		self.link_cdfs = {}
 		self.comon_cdfs = {}
 		self.convo_cdfs = {}
 
-	def get_times_data(self, type_):
+	def get_times_data(self, type_, sort_ = True):
 		print "Accquiring data..."
-		self.data, times= self.analysis.get_long(self.segment, type_ = type_)
+		self.data, times, self.longtimes = self.analysis.get_long(self.segment, type_ = type_)
+		self.RValues = self.data['R']
 		for group in times:
 			self.times[group] = {}
-			for sensor_dt in times[group]:
+			for i in range(len(times[group])):
+				sensor_dt = times[group][i]
 				sensor = sensor_dt[0]
 				times_ = sensor_dt[1]
 				self.times[group][sensor] = times_
 
+		for i in range(len(times[times.keys()[0]])):
+			self.links.append(times[times.keys()[0]][i][0])
+
+		if sort_:
+			temp = {}
+			for group in self.times:
+			#if len(self.times[group][self.times[group].keys()[0]]) > 10:
+				temp[group] = {}
+				info = self.times[group]
+				#print len(self.get_trip_times(info))
+				#print "Info", info
+				#print "Orig", self.get_trip_times(info)
+				fi = Filter.Final(self.get_trip_times(info))
+				trips_new, removed = fi.get_new_trips()
+				#print "New", trips_new
+				#print len(trips_new)
+				for link in self.links:
+					temp[group][link] = []
+				for trip in sorted(trips_new.keys()):
+					for i in range(len(trips_new[trip])):
+						temp[group][self.links[i]].append(trips_new[trip][i])
+				print "Trips Removed from " + group +":", removed
+			self.times = temp
+
+	def get_trip_times(self, time_dict):
+		trips = {}
+		for i in range(len(time_dict[time_dict.keys()[0]])):
+			times = [time_dict[link][i] for link in time_dict.keys()]
+			trips[i+1] = times
+		return trips
+
 	def actual_time_cdf(self):
 		print "Finding actual CDFs..."
 		cdfs = {}
-		for group in self.data:
-			times = self.data[group]['Totals']
+		for group in self.times:
+			times = []
+			for i in range(len(self.times[group][self.times[group].keys()[0]])):
+				time = 0
+				for link in self.times[group]:
+					time += self.times[group][link][i]
+				times.append(time)
 			cdf = self.compute_cdf(times)
 			cdfs[group] = cdf
 		self.actual_cdfs = cdfs
@@ -473,6 +555,7 @@ class Convolve:
 		print "Finding CDFs using convolution..."
 		convolve_cdfs = {}
 		for group in self.link_cdfs:
+			print group
 			convolve_cdfs[group] = {}
 			routes = self.link_cdfs[group].keys()
 			temp = {}
@@ -493,24 +576,30 @@ class Convolve:
 		"""This method takes alpha (weight factor for convolution) as an input parameter
 		and computes composite CDF (by method of convolution) of synthesized route CDFs
 		obtained by convolution(stratafied monte carlo sampling), and by adding percentiles"""
+		#print "COMPOSITE CDF"
 		temp = {}
 		composite = {}
 		n1 = int(round(10000*alpha,0))
+		#print n1
 		n2 = 10000 - n1
 		for i in range(n1):
 			r1 = round(random.uniform(0,1),2)
-			if r1 == 0:
-				r1 = 0.01
+			#print r1
+			#if r1 == 0:
+			#	r1 = 0.01
 			tt_1 = data_type_1[r1]
 			self.dictionary_update(temp, tt_1)
 		for j in range(n2):
+			#print r2
 			r2 = round(random.uniform(0,1),2)
-			if r2 == 0:
-				r2 = 0.01 
+			#if r2 == 0:
+			#	r2 = 0.01 
 			tt_2 = data_type_2[r2]
 			self.dictionary_update(temp, tt_2)
 
+		#print "Temp", temp
 		composite = self.percentile_freq(temp, composite)
+		#print "Composite", composite
 		return composite
 
 	def percentile_difference(self,dict_actual, dict_other):
@@ -527,12 +616,11 @@ class Convolve:
 			square_error += round((dict_other[key]-dict_actual[key])**2, 3)
 			diff_table[key]= perc_error
 			self.dictionary_update(freq_table, perc_error)
-#what does this section of code do?? why am i getting all zeros?
 		n = sorted(freq_table.keys(), reverse = False)
 		tot = 0
 		for j in range(len(n)):
 			curr_key = n[j]
-			if curr_key >= -1.0 and curr_key <= 1.0:
+			if curr_key >= -1.5 and curr_key <= 1.5:
 				tot += freq_table[curr_key]
 		if tot >= 85:
 			test = 1
@@ -542,7 +630,7 @@ class Convolve:
 		rmse = math.sqrt(square_error/100.0)
 		return tot, test, freq_table, diff_table, rmse
 
-	def test_significance_new(self):
+	def test_significance(self):
 		"""This method convolves synthesized CDFs sampling each CDF on a weighted
 		percentage alpha(alpha varies between 0-1), and performs KS Test to check for
 		statistical significance between actual_cdf and newly synthesized cdf"""
@@ -554,17 +642,14 @@ class Convolve:
 			curr_dict_conv = self.convo_cdfs[group]
 			curr_dict_route = self.actual_cdfs[group]
 			update_dict = {}
-	        
+			print group
+			s2, t2, freq_conv, diff_conv, rmse_2 = self.percentile_difference(curr_dict_route, curr_dict_conv)
+				#print 's2: ' + str(s2)
+			s3, t3, freq_comon, diff_comon, rmse_3 = self.percentile_difference(curr_dict_route, curr_dict_comon)   
 			for i in range(101):
 				#temp = {}
 				temp = self.composite_cdf(alpha, curr_dict_conv, curr_dict_comon)
 				s1, t1, freq_comp, diff_comp,rmse_1 = self.percentile_difference(curr_dict_route, temp)
-	 			#print 's1: ' + str(s1)
-				s2, t2, freq_conv, diff_conv, rmse_2 = self.percentile_difference(curr_dict_route, curr_dict_conv)
-				#print 's2: ' + str(s2)
-				s3, t3, freq_comon, diff_comon, rmse_3 = self.percentile_difference(curr_dict_route, curr_dict_comon)
-				#print 's3: ' + str(s3)
-	            
 				key = (group,round(alpha,2),s1)
 				new_dict = {}
 				m = sorted(curr_dict_route.keys(), reverse = False)
@@ -582,18 +667,84 @@ class Convolve:
 
 		return all_data
 
-	def main(self, type_ = None):
+	def final_canidate(self , sheet_name):
+		print "Finding final canidate..."
+		data = self.test_significance() 
+		folder_name = sheet_name
+		script_dir = os.path.dirname(os.path.abspath(folder_name))
+		dest_dir = os.path.join(script_dir, folder_name)
+		try:
+			os.makedirs(dest_dir)
+		except OSError:
+			pass # already exists
+
+		for group in data:
+			#print group
+			curr_regime = data[group]
+			m = curr_regime.keys()
+			max_score = max(m, key = lambda x:x[2])
+			#print 'max_score: ' + str(max_score)
+			poss_candidate = []
+			other = []
+			
+			for i in range(len(m)):
+				curr_key = m[i]
+				if curr_key[2] == max_score[2]:
+					poss_candidate.append(curr_key)
+				else:
+					other.append(curr_key)
+
+			#print "Max Score",max_score
+			#print poss_candidate
+			final_cand = min(poss_candidate, key = lambda x:x[1])
+			#print final_cand
+			curr_dict = curr_regime[final_cand]
+			val = str(final_cand[0])+ "_"+ str(100*(final_cand[1]))
+			#print "val_1: " + str(val)
+			results = val
+			self.data_write(curr_dict,val, dest_dir,";")
+
+	def data_write(self,dict_,val,dest_dir,del_):
+		"""Takes dictionary (key = percentile, val = travel_rate) and user specified
+		excel worksheet name as input arguments and outputs those dicitonary values"""
+		print "Saving Data as " + val + ".csv ..."
+		path = os.path.join(dest_dir, val+".csv")
+		with open(path, 'wb') as f:
+			writer = csv.writer(f)
+			writer = csv.writer(f, delimiter=del_)
+			writer.writerow((['Percentile'],['composite_tt','tt_39_11','tt_comon','tt_conv',
+                                    'perc_error_comp','perc_error_conv','perc_comon','rmse_1',
+                                    'rmse_2','rmse_3','s1','s2','s3']))
+			for row in sorted(dict_.items(), key = lambda x:x[0]):
+				writer.writerow(row)
+
+	def main(self, sheet_name,type_ = 'time' ):
 		self.get_times_data(type_)
 		self.get_link_cdfs()
 		self.actual_time_cdf()
 		self.route_cdf_comonotonic()
 		self.route_cdf_convolve()
-		return self.test_significance_new()
+		#self.final_canidate('Beatty_Backward_Final_')
+		#print "Done"
+		#return self.test_significance()
+		self.final_canidate(sheet_name)
+
+	def save_file(self, filename, dict_, del_):
+		with open(filename + ".csv", 'wb') as f:
+		    writer = csv.writer(f)
+		    writer = csv.writer(f, delimiter=del_)
+		    for row in dict_.iteritems():
+		        writer.writerow(row)
+
+
+# streets = {"Centre":['106','107','113',('112','115')], "Highland":[('120','129'),'136','135','134'], 'Penn':['139', '140', ('128', '130'), ('120', '129')],"Baum":['104',('103','109'),'102']}
+# links = {'PennOne':['139','140',('128','130')], 'PennTwo':['140',('128','130'),('120', '129')], 'Three':['116',('115','112'),'113']}
+# da = DataAnalysis(pathname)
+# forward, backward, foward_time, backward_time = da.load_segment([('109','103'), '110', '140'], type0_ = 'time')
+# da.save_file('Beatty_Forward', forward, ';')
+# da.save_file('Beatty_Backward', backward, ';')
 
 
 
-
-streets = {"Centre":['106','107','113',('112','115')], "Highland":[('120','129'),'136','135','134'], 'Penn':['139', '140', ('128', '130'), ('120', '129')],"Baum":['104',('103','109'),'102']}
-links = {'PennOne':['139','140',('128','130')], 'PennTwo':['140',('128','130'),('120', '129')], 'Three':['116',('115','112'),'113']}
-da = DataAnalysis(pathname)
-da.main(streets, type_ = 'time')
+da = Convolve(['140',('128','130'),('120', '129')])
+da.main('PennTwo')

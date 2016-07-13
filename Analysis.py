@@ -6,7 +6,9 @@ import os
 import math
 import random
 from operator import itemgetter, attrgetter
+from xlrd import open_workbook, xldate_as_tuple
 import Filter
+from Cluster import Cluster
 
 pathname = os.getcwd()
 
@@ -23,6 +25,7 @@ class DataAnalysis:
 		self.forward_split = {}
 		self.backward_split = {}
 		self.outliers = {}
+		self.c_object = None
 
 	def load_data(self,file_):
 		"""Loads sorted valid trips from DataProcess class"""
@@ -70,11 +73,11 @@ class DataAnalysis:
 		return start_times, end_times
 
 	def diff_time(self, time1, time2):
-		"""finds the difference in seconds between two timestamps"""
+		"""finds the difference in minutes between two timestamps"""
 		start = datetime.utcfromtimestamp(time1)
 		end = datetime.utcfromtimestamp(time2)
 		total_time = end - start
-		return total_time.total_seconds()
+		return total_time.total_seconds()/60.
 
 	def sort_trips(self,type_ = None):
 		"""sorts trips containing desired sequnce by day and time or just time"""
@@ -222,20 +225,99 @@ class DataAnalysis:
 	def get_trip_times(self, time_list):
 		trips = {}
 		for i in range(len(time_list[0])):
-			times = [link[i] for link in time_dict]
+			times = [link[i] for link in time_list]
 			trips[i+1] = times
 		return trips
 
 	def find_totals(self, sensor_list):
 		all_totals = []
-		for j in range(len(sensor_list[0])):
+		#print sensor_list
+		for j in range(len(sensor_list[0][1])):
 			total = 0
 			for i in range(len(sensor_list)):
-				total += sensor_list[i][j]
+		#		print sensor_list[i][j]
+				total += sensor_list[i][1][j]
 			all_totals.append(total)
 		return all_totals
 
-	def compile_data(self,dict_, type_ = None, sort = True):
+	def filter_data(self, sensors, group):
+		sensor_data = [sensor_dt[0] for sensor_dt in sensors]
+		times = [sensor_dt[1] for sensor_dt in sensors]
+		info = self.get_trip_times(times)
+	#	print "Info", info
+		fi = Filter.Final(info)
+		trips_new, self.outliers[group] = fi.get_new_trips()
+		#print "New", trips_new
+		#print len(trips_new)
+		print "removed: ", len(self.outliers[group])
+		temp = []
+		for sensor in sensor_data:
+			temp.append((sensor, []))
+		#print temp
+		for trip in sorted(trips_new.keys()):
+			for i in range(len(trips_new[trip])):
+				temp[i][1].append(trips_new[trip][i])
+		return temp
+
+	def get_excel_data(self):
+		new_data = {}
+		sensor_times = {}
+		total_time = {}
+
+		book = open_workbook("I-5_S_BlueStats 39-9-10-11.xls")
+		sheet = book.sheet_by_name('Data-1')
+		mac_ids = sheet.col_values(0,start_rowx=1)
+		starttime = sheet.col_values(4,start_rowx=1)
+		tt_39_09 = sheet.col_values(7,start_rowx=1)
+		tt_09_10 = sheet.col_values(11,start_rowx=1)
+		tt_10_11 = sheet.col_values(15,start_rowx=1)
+		totals = sheet.col_values(17,start_rowx=1)
+		go = True
+		last = False 
+		start = 0
+		end = 50
+		g_index = 0
+
+		while go:
+			if last:
+				go = False
+
+			g_index += 1
+			group = "Group " + str(g_index)
+			stimes = starttime[start:end]
+			t1 = tt_39_09[start:end]
+			t2 = tt_09_10[start:end]
+			t3 = tt_10_11[start:end]
+			total = totals[start:end]
+			sensors = [('39_09', t1),('09_10', t2),('10_11', t3)]
+			sorted_sensors = self.filter_data(sensors,group)
+
+			Rvalues = []
+			j = 0
+			while j < len(sorted_sensors)-1:
+					(link1,times1) = sorted_sensors[j]
+					(link2,times2) = sorted_sensors[j+1]
+					link = 'tt_'+link1+'/' + link2
+					#print link
+					R =self.find_R(times1,times2)
+					Rvalues.append((link,R))
+					j = j + 1
+
+			new_data[group] = [r[1] for r in Rvalues]
+			sensor_times[group] = sorted_sensors
+			total_time[group] = total  
+			start = end
+			end += 50
+
+			if end >= len(mac_ids):
+				end = len(mac_ids)
+				last = True
+
+			g_index += 1
+		return new_data, None, sensor_times, total_time
+
+
+	def compile_data(self,dict_, type_ = None, filter_ = True):
 		"""compiles all data ("R" value, Timespan of group (first starttime: laststarttime)),
 		 the average time and stdv for each link, the average trip time, trip stdv) and 
 		returns in dictionary. Also returns sensor times and total times"""
@@ -243,38 +325,26 @@ class DataAnalysis:
 		sensor_times = {}
 		total_time = {}
 		for group in dict_:
-			Rvalues = {}
-			i = 0
+			Rvalues = []
+			j = 0
 			sensorlist = self.split_sensors(dict_[group])
 			sensors = self.time_between(sensorlist)
-			if sort_:
-				sensor_data = [sen[0] for sen in sensors]
-				times = [time[1] for times in sensors]
-				info = self.get_trip_times(times)
-				print "Info", info
-				fi = Filter.Final(info)
-				trips_new, self.outliers[group] = fi.get_new_trips()
-				#print "New", trips_new
-				#print len(trips_new)
-				temp = []
-				for trip in sorted(trips_new.keys()):
-					for i in range(len(trips_new[trip])):
-						temp.append((sensor_data[i], trips_new[trip][i]))
-				print temp
-				print "Trips Removed from " + group +":", len(self.outliers)
-				sensors = temp
+			#print "sensors" , sensors
+			if filter_:
+				sensors = self.filter_data(sensors, group)
 
 			sensor_times[group] = sensors
 			totals = self.find_totals(sensors)
 			total_time[group] = totals
 
-			while i < len(sensors)-1:
-				(link1,times1) = sensors[i]
-				(link2,times2) = sensors[i+1]
+			while j < len(sensors)-1:
+				(link1,times1) = sensors[j]
+				(link2,times2) = sensors[j+1]
 				link = 'tt_'+link1+'/' + link2
 				#print link
-				Rvalues[link] = self.find_R(times1,times2)
-				i = i + 1
+				R =self.find_R(times1,times2)
+				Rvalues.append((link,R))
+				j = j + 1
 
 			start, end = self.list_times(dict_[group], type_)
 			avgtimes = []
@@ -290,7 +360,37 @@ class DataAnalysis:
 
 		return data, sensor_times, total_time
 
-	def load_segment(self, sensors, type0_ = None):
+	def get_group_rvalues(self, sensors, type_ = 'time', reverse = False):
+		long_, longtime, l_times = self.get_long(sensors, type_ = type_, reverse = reverse)
+		GR = {}
+		for group in long_:
+			rlist = long_[group]['R']
+			rs = [r[1] for r in rlist]
+			GR[group] = rs
+
+		return GR, long_, longtime, l_times
+
+	def cluster_data(self, sensors, type_ = 'time', reverse = False):
+		GR, long_, longtime, l_times = self.get_group_rvalues(sensors, type_ = None, reverse = reverse)
+		#GR, long_, longtime, l_times = self.get_excel_data()
+		self.c_object = Cluster(GR)
+		gc = self.c_object.main()
+		total_times = {}
+		link_times = {}
+		for cluster in gc:
+			link_times[cluster] = {}
+			total_times[cluster] = []
+			for i in range(len(longtime[longtime.keys()[0]])):
+				link_times[cluster][i+1] = []
+			for group in gc[cluster]:
+				for i in range(len(longtime[group])):
+					ti = longtime[group][i][1]
+					link_times[cluster][i+1].extend(ti)
+				total_times[cluster].extend(l_times[group])
+		#print "c_object_1", c_object
+		return gc, link_times, total_times
+
+	def load_segment(self, sensors, type0_ = 'time'):
 		"""loads a segment of grid"""
 		self.load_data('SortedTrips.csv')
 		self.get_trips(sensors)
@@ -348,7 +448,7 @@ class DataAnalysis:
 					writer.writeheader()
 					writer.writerow(direction[group]['R'])
 
-	def main(self, streets, type_ = None):
+	def main(self, streets, type_ = 'time'):
 		"""returns data from a dictionary containing streets: {segmentname:[sensors...], ....}"""
 		for street in streets:
 			da = DataAnalysis(pathname)
@@ -365,6 +465,7 @@ class Convolve:
 
 	def __init__(self, segment_):
 		self.analysis = DataAnalysis(pathname)
+		self.cluster_object = None
 		self.segment = segment_
 		self.times = {}
 		self.links = []
@@ -375,9 +476,11 @@ class Convolve:
 		self.comon_cdfs = {}
 		self.convo_cdfs = {}
 
+
 	def get_times_data(self, type_, sort_ = True):
 		print "Accquiring data..."
 		self.data, times, self.longtimes = self.analysis.get_long(self.segment, type_ = type_)
+		self.cluster_object = self.analysis.c_object
 		self.RValues = self.data['R']
 		for group in times:
 			self.times[group] = {}
@@ -408,8 +511,16 @@ class Convolve:
 				for trip in sorted(trips_new.keys()):
 					for i in range(len(trips_new[trip])):
 						temp[group][self.links[i]].append(trips_new[trip][i])
-				print "Trips Removed from " + group +":", removed
+				#print "Trips Removed from " + group +":", removed
 			self.times = temp
+
+	def get_cluster_data(self, type_ = 'time'):
+		self.data, self.times, self.longtimes = self.analysis.cluster_data(self.segment)
+		self.cluster_object = self.analysis.c_object
+		#print "link times", self.times
+		#print "total times",self.longtimes
+		self.links = sorted(self.times[self.times.keys()[0]].keys())
+		#print "c_object", c_object
 
 	def get_trip_times(self, time_dict):
 		trips = {}
@@ -673,6 +784,7 @@ class Convolve:
 		folder_name = sheet_name
 		script_dir = os.path.dirname(os.path.abspath(folder_name))
 		dest_dir = os.path.join(script_dir, folder_name)
+
 		try:
 			os.makedirs(dest_dir)
 		except OSError:
@@ -704,11 +816,14 @@ class Convolve:
 			results = val
 			self.data_write(curr_dict,val, dest_dir,";")
 
+		path = os.path.join(dest_dir, folder_name + "_Plot.jpg")
+		self.cluster_object.save_plot(path)
+
 	def data_write(self,dict_,val,dest_dir,del_):
 		"""Takes dictionary (key = percentile, val = travel_rate) and user specified
 		excel worksheet name as input arguments and outputs those dicitonary values"""
 		print "Saving Data as " + val + ".csv ..."
-		path = os.path.join(dest_dir, val+".csv")
+		path = os.path.join(dest_dir, "Cluster " + val+".csv")
 		with open(path, 'wb') as f:
 			writer = csv.writer(f)
 			writer = csv.writer(f, delimiter=del_)
@@ -719,7 +834,8 @@ class Convolve:
 				writer.writerow(row)
 
 	def main(self, sheet_name,type_ = 'time' ):
-		self.get_times_data(type_)
+		#self.get_times_data(type_)
+		self.get_cluster_data()
 		self.get_link_cdfs()
 		self.actual_time_cdf()
 		self.route_cdf_comonotonic()
@@ -730,21 +846,22 @@ class Convolve:
 		self.final_canidate(sheet_name)
 
 	def save_file(self, filename, dict_, del_):
-		with open(filename + ".csv", 'wb') as f:
+		with open("Cluster "+filename + ".csv", 'wb') as f:
 		    writer = csv.writer(f)
 		    writer = csv.writer(f, delimiter=del_)
 		    for row in dict_.iteritems():
 		        writer.writerow(row)
 
 
-# streets = {"Centre":['106','107','113',('112','115')], "Highland":[('120','129'),'136','135','134'], 'Penn':['139', '140', ('128', '130'), ('120', '129')],"Baum":['104',('103','109'),'102']}
+#streets = {"Centre":['106','107','113',('112','115')], "Highland":[('120','129'),'136','135','134'], 'Penn':['139', '140', ('128', '130'), ('120', '129'), '119'],"Baum":['104',('103','109'),'102']}
 # links = {'PennOne':['139','140',('128','130')], 'PennTwo':['140',('128','130'),('120', '129')], 'Three':['116',('115','112'),'113']}
-# da = DataAnalysis(pathname)
+#da = DataAnalysis(pathname)
+#da.main(streets)
 # forward, backward, foward_time, backward_time = da.load_segment([('109','103'), '110', '140'], type0_ = 'time')
 # da.save_file('Beatty_Forward', forward, ';')
 # da.save_file('Beatty_Backward', backward, ';')
 
 
 
-da = Convolve(['140',('128','130'),('120', '129')])
-da.main('PennTwo')
+#da = Convolve(['139', '140', ('128', '130'), ('120', '129')])
+#da.main('Test_penn')

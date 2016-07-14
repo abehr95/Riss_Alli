@@ -98,7 +98,7 @@ class InitialParams(object):
 		# set lower and upper bounds
 		for i in range(len(self.links)):
 			self.del_lb.append(5)
-			self.del_ub.append(100)
+			self.del_ub.append(10)
 
 	# def find_avg(self, i):
 	# 	tot = 0.
@@ -286,7 +286,7 @@ class Filter:
 			for j in range(len(tt)):
 				if tt[j] < self.min_times[j] or tt[j] < self.t_lb[j] or tt[j] > self.t_ub[j]:
 					flag.append(1)
-					print "outlier", tt[j], "mt", self.min_times[j], "lb",self.t_lb[j], "ub",self.t_ub[j]
+				#	print "outlier", tt[j], "mt", self.min_times[j], "lb",self.t_lb[j], "ub",self.t_ub[j]
 				else:
 					flag.append(0)
 			self.flag_res.append(flag)
@@ -398,6 +398,7 @@ class Final:
 			for j in xrange(len(key_sorted)):
 				#print start_rec, last_rec, len(key_sorted)
 				for i in xrange(start_rec, last_rec):
+					#print i, len(key_sorted)
 					key = key_sorted[i]
 					keys.append(key)
 					val = self.tv_times[key]
@@ -435,7 +436,7 @@ class Final:
 						last_rec += 5
 
 				if last_rec >= len(key_sorted):
-					last_rec = start_rec + (len(key_sorted)- start_rec-1)
+					last_rec = start_rec + (len(key_sorted)- start_rec)
 
 
 	def remove_outliers(self):

@@ -32,7 +32,7 @@ class Convolve:
 
 	def get_times_data(self, type_, sort_ = True):
 		print "Accquiring data..."
-		self.data, times, self.longtimes = self.analysis.load_segment(self.segment, type_ = type_, reverse = False)
+		self.data, times, self.longtimes = self.analysis.get_long(self.segment, type_ = type_)
 		self.cluster_object = self.analysis.c_object
 		self.RValues = self.data['R']
 		for group in times:

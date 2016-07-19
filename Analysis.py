@@ -25,6 +25,9 @@ class DataAnalysis:
 		self.backward_split = {}
 		self.outliers = {}
 		self.c_object = None
+		self.compiled_data = {}
+		self.sensor_times = {}
+		self.total_time = {}
 
 	def count_items(self, dict_):
 		num = 0 
@@ -47,7 +50,7 @@ class DataAnalysis:
 		reverse.reverse()
 		self.backwards_trips = self.data_object.check_seq(reverse)
 		print "Backward Trips:", len(self.backwards_trips)
-		
+
 	def find_times(self, timelist):
 		"""finds the start time and end time in a list of sensor data, 
 		where some sensors may have two readings. In this case the first sensor is taken"""
@@ -376,6 +379,9 @@ class DataAnalysis:
 			#, 'Start,End,Total(min)':times, 
 			data[group] = {'R':Rvalues, 'Timespan':timespan, 'Segment:(Average time(sec), Average stdv)': avgtimes, 'Average_trip(min)':average, 'Stdv(min)':stdv}
 		print "points removed:", self.count_items(self.outliers)
+		self.compiled_data = data
+		self.sensor_times = sensor_times
+		self.total_time = total_time
 		return data, sensor_times, total_time
 
 	def get_group_rvalues(self, sensors, type_ = 'time', reverse = False):

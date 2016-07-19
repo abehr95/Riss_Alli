@@ -16,20 +16,25 @@ class Cluster:
 		self.centroid = {}
 		self.rclusters = {}
 		self.gclusters = {}
+		self.negative_values = []
 
 	def data_read(self):
 		for group in self.data:
-			self.groups.append(group)
 			if type(self.data[group]) == list:
 				if all(item >= -.01 for item in self.data[group]):
 					self.rvalues.append(self.data[group])
+					self.groups.append(group)
 				else:
-					print "thrown out: ", self.data[group]
+					#print "thrown out: ", self.data[group]
+					self.negative_values.append((group,self.data[group]))
 			else:
 				if self.data[group] >= -.01:
 					self.rvalues.append(self.data[group])
+					self.groups.append(group)
 				else:
-					print "thrown out: ", self.data[group]
+					#print "thrown out: ", self.data[group]
+					self.negative_values.append((group,self.data[group]))
+		print "All Groups:", len(self.data), "  Valid Groups:", len(self.groups), "  Invalid Groups:", len(self.negative_values)
 
 	def compute_distance(self,data_type, point):
 		temp = {}

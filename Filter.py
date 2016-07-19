@@ -371,7 +371,7 @@ class Final:
 	def filter_times(self):
 		m = InitialParams(self.tv_times)
 		m.initialize()
-		#print 'len_trav_data: ' + str(len(trav_times))
+		print 'len_trav_data: ' + str(len(self.tv_times))
 		self._absmin = m.get_abs_min_times()
 		#print "abs min", self._absmin
 		_mintimes = m.get_min_times()

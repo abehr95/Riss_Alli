@@ -19,6 +19,7 @@ class DataAnalysis:
 		self.data = None
 		self.forward_trips = {}
 		self.backwards_trips = {}
+		self.longer_trips = {}
 		self.sort_ft = []
 		self.sort_bt = []
 		self.forward_split = {}
@@ -26,13 +27,19 @@ class DataAnalysis:
 		self.outliers = {}
 		self.c_object = None
 
+	def count_items(self, dict_):
+		num = 0 
+		for items in dict_:
+			num += len(dict_[items])
+		return num
+
 	def load_data(self,file_):
 		"""Loads sorted valid trips from DataProcess class"""
 		self.data_object = RawDataManager(self.path)
 		self.data_object.load_sorted_trips(file_)
 		self.data = self.data_object.get_valid_trips()
 
-	def get_trips(self,sequence):
+	def get_trips(self,sequence, reverse = False):
 		"""finds trips in all valid trips that contain the desired 
 		sequence of sensors where sequence = [sensor1, sensor2....]"""
 		self.forward_trips = self.data_object.check_seq(sequence)
@@ -41,6 +48,19 @@ class DataAnalysis:
 		reverse.reverse()
 		self.backwards_trips = self.data_object.check_seq(reverse)
 		print "Backward Trips:", len(self.backwards_trips)
+
+		long_trips = self.forward_trips
+		short_trips = self.backwards_trips
+
+		if len(self.backwards_trips) > len(self.forward_trips):
+			long_trips = self.backwards_trips
+			short_trips = self.forward_trips
+
+		if reverse:
+			long_trips = short_trips
+
+		self.longer_trips = long_trips
+
 
 	def find_times(self, timelist):
 		"""finds the start time and end time in a list of sensor data, 
@@ -81,12 +101,10 @@ class DataAnalysis:
 	def sort_trips(self,type_ = None):
 		"""sorts trips containing desired sequnce by day and time or just time"""
 		if type_ == 'day' or type_ == None:
-			self.sort_ft = sorted(self.forward_trips.items(), key = lambda x: x[0][2])
-			self.sort_bt = sorted(self.backwards_trips.items(), key = lambda x: x[0][2])
+			self.sort_ft = sorted(self.longer_trips.items(), key = lambda x: x[0][2])
 
 		if type_ == 'time':
-			self.sort_ft = sorted(self.forward_trips.items(), key = lambda x: datetime.utcfromtimestamp(x[0][2]).time())
-			self.sort_bt = sorted(self.backwards_trips.items(), key = lambda x: datetime.utcfromtimestamp(x[0][2]).time())
+			self.sort_ft = sorted(self.longer_trips.items(), key = lambda x: datetime.utcfromtimestamp(x[0][2]).time())
 
 	def split_trips(self, group_number, overlap = None):
 		"""splits sorted trips into groups of fifty, if overlap it set to a number, groups will overlap by that number"""
@@ -104,40 +122,15 @@ class DataAnalysis:
 					break
 
 			if len(trips) < 10:
-				print "Trip Short:", len(trip)
-				needed = 10-len(trips)
-				print "Needed",needed
-				prev = self.forward_split['Group ' + str(group-1)]
-				new = prev[len(prev)-needed:len(prev)]
-				trips = new + trips
-				print "final", len(trips)
-
+				old_trips = self.forward_split['Group ' + str(group-1)]
+				new_trips = old_trips + trips
+				self.forward_split['Group ' + str(group-1)] = new_trips
+				break
 				
 			self.forward_split['Group ' + str(group)] = trips
 			group = group + 1
 			if overlap:
 				if tripi < len(self.sort_ft):
-					if overlap < group_number:
-						tripi = tripi - overlap
-					else:
-						raise ValueError, 'overlap value too large'
-		
-		tripi = 0
-		group = 1
-		while tripi < len(self.sort_bt):
-			i = 0
-			trips = []
-			while i < group_number:
-				if tripi < len(self.sort_bt):
-					trips.append(self.sort_bt[tripi]) 
-					tripi = tripi + 1
-					i = i+1
-				else:
-					break
-			self.backward_split['Group ' + str(group)] = trips
-			group = group + 1
-			if overlap:
-				if tripi < len(self.sort_bt):
 					if overlap < group_number:
 						tripi = tripi - overlap
 					else:
@@ -366,18 +359,14 @@ class DataAnalysis:
 			
 			#, 'Start,End,Total(min)':times, 
 			data[group] = {'R':Rvalues, 'Timespan':timespan, 'Segment:(Average time(sec), Average stdv)': avgtimes, 'Average_trip(min)':average, 'Stdv(min)':stdv}
-
+		print "points removed:", self.count_items(self.outliers)
 		return data, sensor_times, total_time
 
 	def get_group_rvalues(self, sensors, type_ = 'time', reverse = False):
-		long_, longtime, l_times = self.get_long(sensors, type_ = type_, reverse = reverse)
+		long_, longtime, l_times = self.load_segment(sensors, type_ = type_ , reverse = reverse)
 		GR = {}
 		for group in long_:
 			rlist = long_[group]['R']
-			#rs = []
-			#for el in rlist:
-			#	if all(item >=  for item in el):
-			#		rs.append(el)
 			rs = [r[1] for r in rlist]
 			#print rs
 			GR[group] = rs
@@ -405,42 +394,17 @@ class DataAnalysis:
 		#print "c_object_1", c_object
 		return gc, link_times, total_times
 
-	def load_segment(self, sensors, type0_ = 'time'):
+	def load_segment(self, sensors, type_ = 'time', reverse = False):
 		"""loads a segment of grid"""
 		self.load_data('SortedTrips.csv')
-		self.get_trips(sensors)
-		self.sort_trips(type_ = type0_)
-		self.split_trips(20, overlap = 10)
-		foward, forward_time, tottimes_f = self.compile_data(self.forward_split,type_ = type0_)
-		backward, backward_time, tottimes_b = self.compile_data(self.backward_split,type_ = type0_)
-		return foward, backward, forward_time, backward_time, tottimes_f, tottimes_b
-
-	def get_long(self, sensors, type_ = None, reverse = False):
-		"""get the direction of segment with the most trips""" 
-		forward, backward, forward_time, backward_time, tottimes_f, tottimes_b = self.load_segment(sensors, type0_ = type_)
-		if len(forward) >= len(backward):
-			long_ = forward
-			longtime = forward_time
-			l_times = tottimes_f
-			short = backward
-			shorttime = backward_time
-			s_times = tottimes_b
-		else:
-			long_ = backward
-			longtime = backward_time
-			l_times = tottimes_b
-			short = forward
-			shorttime = forward_time
-			s_times = tottimes_f
-
-		if reverse:
-			long_ = short
-			longtime = shorttime
-			l_times = s_times
-		return long_, longtime, l_times
-
-	"""finds begining and end of list of times"""	
+		self.get_trips(sensors, reverse = reverse)
+		self.sort_trips(type_ = type_)
+		self.split_trips(20)
+		foward, forward_time, tottimes_f = self.compile_data(self.forward_split, type_ = type_)
+		return foward, forward_time, tottimes_f
+	
 	def timespan(self,times):
+		"""finds begining and end of list of times"""
 		s_times = sorted(times)
 		return (s_times[0].isoformat(),s_times[-1].isoformat())
 
@@ -467,11 +431,7 @@ class DataAnalysis:
 		"""returns data from a dictionary containing streets: {segmentname:[sensors...], ....}"""
 		for street in streets:
 			da = DataAnalysis(pathname)
-			forward, backward, foward_time, backward_time, tottimes_f, tottimes_b = da.load_segment(streets[street], type0_ = type_)
-			if len(forward) >= len(backward):
-				longest = forward
-			else:
-				longest = backward
+			longest, forward_time, tottimes_f = da.load_segment(streets[street], type_ = type_)
 			print street, len(longest)
 			da.save_file(street, longest, ';')
 

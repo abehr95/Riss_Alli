@@ -11,6 +11,7 @@ import Filter
 from Cluster import Cluster
 from xlwt import Workbook, XFStyle
 from Analysis import DataAnalysis
+import matplotlib.pyplot as plt
 
 pathname = os.getcwd()
 
@@ -28,6 +29,7 @@ class Convolve:
 		self.link_cdfs = {}
 		self.comon_cdfs = {}
 		self.convo_cdfs = {}
+		self.comp_cdfs = {}
 
 
 	def get_times_data(self, type_, sort_ = True):
@@ -313,7 +315,7 @@ class Convolve:
 			for i in range(101):
 				#temp = {}
 				temp = self.composite_cdf(alpha, curr_dict_conv, curr_dict_comon)
-				s1, t1, freq_comp, diff_comp,rmse_1 = self.percentile_difference(curr_dict_route, temp)
+				s1, t1, freq_comp, diff_comp, rmse_1 = self.percentile_difference(curr_dict_route, temp)
 				key = (group,round(alpha,2),s1)
 				new_dict = {}
 				m = sorted(curr_dict_route.keys(), reverse = False)
@@ -367,10 +369,19 @@ class Convolve:
 			val = str(final_cand[0])+ "_"+ str(100*(final_cand[1])) + "_"
 			#print "val_1: " + str(val)
 			results = val
-			self.data_write(curr_dict,val, dest_dir)
+			self.data_write(curr_dict,val,dest_dir)
+			self.get_composite_data(group,curr_dict)
+			self.plot_cdfs(group,100*(final_cand[1]),dest_dir)
 
 		path = os.path.join(dest_dir, folder_name + "_Plot.jpg")
 		self.cluster_object.save_plot(path)
+
+	def get_composite_data(self,group,test_dic):
+		cdf = {}
+		for perc in sorted(test_dic.keys()):
+			comp = test_dic[perc][0]
+			cdf[perc] = comp
+		self.comp_cdfs[group] = cdf
 
 	def data_write(self,dict_,val,dest_dir):
 		print "Saving Data as " + val + str(dict_.values()[0][10]) + ".xls ..."
@@ -406,13 +417,33 @@ class Convolve:
 		#return self.test_significance()
 		self.final_canidate(sheet_name)
 
+	def plot_cdfs(self,group,val,dest_dir):
+		perc = sorted(self.actual_cdfs[group].keys())
+		actual = self.get_perc_list(perc, self.actual_cdfs[group])
+		comp = self.get_perc_list(perc, self.comp_cdfs[group])
+		como = self.get_perc_list(perc,self.comon_cdfs[group])
+		convo = self.get_perc_list(perc, self.convo_cdfs[group])
+		plt.plot(actual, perc, 'b', label = "Actual CDF")
+		plt.plot(comp, perc, 'g', label = "Composite CDF")
+		plt.plot(como, perc, 'm', label = "Comonotonic CDF")
+		plt.plot(convo,perc, 'r', label = "Convolution CDF")
+		plt.legend(loc = 4)
+		path = os.path.join(dest_dir, str(group) +"_"+ str(val) + "_CDF_plot.jpg")
+		plt.savefig(path)
+		plt.show()
+
+	def get_perc_list(self, perc, dict_):
+		cdf_list = []
+		for per in perc:
+			cdf_list.append(dict_[per])
+		return cdf_list
+
+
 	def write_along_column(self,sheet, vals, r, c = 0):
 		for i in xrange(len(vals)):
 			sheet.write(r, c+i, vals[i])
 
-
-
-da = Convolve(['139', '140', ('128', '130'), ('120', '129')])
-da.main('OneWay')
+#da = Convolve(['139', '140', ('128', '130'), ('120', '129')])
+#da.main('OneWay')
 
 

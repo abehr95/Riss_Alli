@@ -123,7 +123,7 @@ class NC:
     self.tTimes = times
     self.tTotals = totals
 
-  def analyze_route():
+  def analyze_route(self):
    # 'Set Parameter Values'
     jTn = round(10000. / self.nObs, 0)
     nSamp = jTn * self.nObs

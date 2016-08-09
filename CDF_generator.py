@@ -29,7 +29,9 @@ class Convolve:
 		self.link_cdfs = {}
 		self.comon_cdfs = {}
 		self.convo_cdfs = {}
+		self.count_cdfs = {}
 		self.comp_cdfs = {}
+		self.counter = None
 
 
 	def get_times_data(self, type_, sort_ = True):
@@ -237,17 +239,39 @@ class Convolve:
 
 		self.convo_cdfs = convolve_cdfs
 
+	def route_cdf_countermonotonic(self):
+		for group in self.times:
+			Ncdf = []
+			links = sorted(self.times[group].keys())
+			ntrips = len(self.longtimes[group])
+			for j in xrange(ntrips):
+				tNeg = 0.
+				for link in links:
+					times = sorted(self.times[group][link])
+					if link%2 == 0:
+						tNeg = tNeg + times[j]
+					else:
+						tNeg = tNeg + times[ntrips - j - 1]
+				Ncdf.append(tNeg)
+				cdf = self.compute_cdf(Ncdf)
+			self.count_cdfs[group] = cdf
 
-	def composite_cdf(self,alpha,data_type_1,data_type_2):
+
+	def composite_cdf(self,alpha, data_type_1,data_type_2, beta = None, data_type_3 = None):
 		"""This method takes alpha (weight factor for convolution) as an input parameter
 		and computes composite CDF (by method of convolution) of synthesized route CDFs
 		obtained by convolution(stratafied monte carlo sampling), and by adding percentiles"""
 		#print "COMPOSITE CDF"
 		temp = {}
 		composite = {}
-		n1 = int(round(100000*alpha,0))
+		n1 = int(round(10000*alpha,0))
 		#print n1
-		n2 = 100000 - n1
+		if self.counter:
+			n2 = int(round(10000*beta,0))
+			n3 = 10000 - n1 - n2
+		else:
+			n2 = 10000 - n1
+
 		for i in range(n1):
 			r1 = round(random.uniform(0,1),2)
 			#print r1
@@ -262,6 +286,14 @@ class Convolve:
 			#	r2 = 0.01 
 			tt_2 = data_type_2[r2]
 			self.dictionary_update(temp, tt_2)
+		if self.counter:
+			for i in range(n3):
+				r3 = round(random.uniform(0,1),2)
+				#print r1
+				#if r1 == 0:
+				#	r1 = 0.01
+				tt_3 = data_type_3[r3]
+				self.dictionary_update(temp, tt_3)
 
 		#print "Temp", temp
 		composite = self.percentile_freq(temp, composite)
@@ -300,81 +332,171 @@ class Convolve:
 		"""This method convolves synthesized CDFs sampling each CDF on a weighted
 		percentage alpha(alpha varies between 0-1), and performs KS Test to check for
 		statistical significance between actual_cdf and newly synthesized cdf"""
-		print "Testing Significance..."
 		all_data = {}
-		for group in self.actual_cdfs:
-			alpha = 0
-			curr_dict_comon = self.comon_cdfs[group]
-			curr_dict_conv = self.convo_cdfs[group]
-			curr_dict_route = self.actual_cdfs[group]
-			update_dict = {}
-			print group
-			s2, t2, freq_conv, diff_conv, rmse_2 = self.percentile_difference(curr_dict_route, curr_dict_conv)
-				#print 's2: ' + str(s2)
-			s3, t3, freq_comon, diff_comon, rmse_3 = self.percentile_difference(curr_dict_route, curr_dict_comon)   
-			for i in range(101):
-				#temp = {}
-				temp = self.composite_cdf(alpha, curr_dict_conv, curr_dict_comon)
-				s1, t1, freq_comp, diff_comp, rmse_1 = self.percentile_difference(curr_dict_route, temp)
-				key = (group,round(alpha,2),s1)
-				new_dict = {}
-				m = sorted(curr_dict_route.keys(), reverse = False)
-				for i in range(len(m)):
-					perc = m[i]
-					val = [temp[perc],curr_dict_route[perc],curr_dict_comon[perc],curr_dict_conv[perc],diff_comp[perc],
-							diff_conv[perc],diff_comon[perc],rmse_1,rmse_2,rmse_3,s1,s2,s3]
-					new_dict[perc]= val
-				
-				update_dict[key]= new_dict
-				alpha += 0.01
-				temp = {}
+		if self.counter:
+			print "Testing Significance..."
+			for group in self.actual_cdfs:
+				alpha = 0
+				curr_dict_comon = self.comon_cdfs[group]
+				curr_dict_conv = self.convo_cdfs[group]
+				curr_dict_count = self.count_cdfs[group]
+				curr_dict_route = self.actual_cdfs[group]
+				update_dict = {}
+				print group
+				s2, t2, freq_conv, diff_conv, rmse_2 = self.percentile_difference(curr_dict_route, curr_dict_conv)
+					#print 's2: ' + str(s2)
+				s3, t3, freq_comon, diff_comon, rmse_3 = self.percentile_difference(curr_dict_route, curr_dict_comon)   
+				s4, t4, freq_count, diff_count, rmse_4 = self.percentile_difference(curr_dict_route, curr_dict_count) 
+				for i in range(101):
+					brange = 101-i
+					beta = 0
+					for j in range(brange):
+					#temp = {}
+						temp = self.composite_cdf(alpha, curr_dict_conv, curr_dict_comon, beta = beta, data_type_3 = curr_dict_count)
+						s1, t1, freq_comp, diff_comp, rmse_1 = self.percentile_difference(curr_dict_route, temp)
+						key = (group,round(alpha,2),round(beta,2),s1)
+						new_dict = {}
+						m = sorted(curr_dict_route.keys(), reverse = False)
+						for k in range(len(m)):
+							perc = m[k]
+							val = [temp[perc],curr_dict_route[perc], curr_dict_comon[perc], curr_dict_conv[perc], curr_dict_count[perc], diff_comp[perc],
+									diff_conv[perc],diff_comon[perc], diff_count[perc], rmse_1,rmse_2,rmse_3, rmse_4, s1,s2,s3, s4]
+							new_dict[perc]= val
+						
+						update_dict[key]= new_dict
+						beta += 0.01
+						temp = {}
+					alpha += 0.01
+				all_data[group] = update_dict
 
+		else:
+			print "Testing Significance..."
+			for group in self.actual_cdfs:
+				alpha = 0
+				curr_dict_comon = self.comon_cdfs[group]
+				curr_dict_conv = self.convo_cdfs[group]
+				curr_dict_route = self.actual_cdfs[group]
+				update_dict = {}
+				print group
+				s2, t2, freq_conv, diff_conv, rmse_2 = self.percentile_difference(curr_dict_route, curr_dict_conv)
+					#print 's2: ' + str(s2)
+				s3, t3, freq_comon, diff_comon, rmse_3 = self.percentile_difference(curr_dict_route, curr_dict_comon)   
+				for i in range(101):
+					#temp = {}
+					temp = self.composite_cdf(alpha, curr_dict_conv, curr_dict_comon)
+					s1, t1, freq_comp, diff_comp, rmse_1 = self.percentile_difference(curr_dict_route, temp)
+					key = (group,round(alpha,2),s1)
+					new_dict = {}
+					m = sorted(curr_dict_route.keys(), reverse = False)
+					for k in range(len(m)):
+						perc = m[k]
+						val = [temp[perc],curr_dict_route[perc], curr_dict_comon[perc], curr_dict_conv[perc], diff_comp[perc],
+								diff_conv[perc],diff_comon[perc], rmse_1,rmse_2,rmse_3, s1,s2,s3]
+						new_dict[perc]= val
+					
+					update_dict[key]= new_dict
+					temp = {}
+					alpha += 0.01
 			all_data[group] = update_dict
 
 		return all_data
 
 	def final_canidate(self , sheet_name):
-		print "Finding final canidate..."
-		data = self.test_significance() 
-		folder_name = sheet_name
-		script_dir = os.path.dirname(os.path.abspath(folder_name))
-		dest_dir = os.path.join(script_dir, folder_name)
+		if self.counter:
+			print "Finding final canidate..."
+			data = self.test_significance() 
+			folder_name = sheet_name
+			script_dir = os.path.dirname(os.path.abspath(folder_name))
+			dest_dir = os.path.join(script_dir, folder_name)
 
-		try:
-			os.makedirs(dest_dir)
-		except OSError:
-			pass # already exists
+			try:
+				os.makedirs(dest_dir)
+			except OSError:
+				pass # already exists
 
-		for group in data:
-			#print group
-			curr_regime = data[group]
-			m = curr_regime.keys()
-			max_score = max(m, key = lambda x:x[2])
-			#print 'max_score: ' + str(max_score)
-			poss_candidate = []
-			other = []
-			
-			for i in range(len(m)):
-				curr_key = m[i]
-				if curr_key[2] == max_score[2]:
-					poss_candidate.append(curr_key)
-				else:
-					other.append(curr_key)
+			for group in data:
+				#print group
+				curr_regime = data[group]
+				m = curr_regime.keys()
+				max_score = max(m, key = lambda x:x[3])
+				#print 'max_score: ' + str(max_score)
+				poss_candidate = []
+				other = []
+				
+				for i in range(len(m)):
+					curr_key = m[i]
+					if curr_key[3] == max_score[3]:
+						poss_candidate.append(curr_key)
+					else:
+						other.append(curr_key)
 
-			#print "Max Score",max_score
-			#print poss_candidate
-			final_cand = min(poss_candidate, key = lambda x:x[1])
-			#print final_cand
-			curr_dict = curr_regime[final_cand]
-			val = str(final_cand[0])+ "_"+ str(100*(final_cand[1])) + "_"
-			#print "val_1: " + str(val)
-			results = val
-			self.data_write(curr_dict,val,dest_dir)
-			self.get_composite_data(group,curr_dict)
-			self.plot_cdfs(group,100*(final_cand[1]),dest_dir)
+				#print "Max Score",max_score
+				#print poss_candidate
+				final_alpha = min(poss_candidate, key = lambda x:x[1])
+				poss_betas = []
 
-		path = os.path.join(dest_dir, folder_name + "_Plot.jpg")
-		self.cluster_object.save_plot(path)
+				for i in range(len(poss_candidate)):
+					curr_key = poss_candidate[i]
+					if curr_key[3] == max_score[3]:
+						poss_betas.append(curr_key)
+
+				final_cand = min(poss_betas, key = lambda x:x[2])
+
+				#print final_cand
+				curr_dict = curr_regime[final_cand]
+				val = str(final_cand[0])+ "_"+ str(100*(final_cand[1])) + "_" + str(100*(final_cand[2])) + "_"
+				#print "val_1: " + str(val)
+				results = val
+				self.data_write(curr_dict,val,dest_dir)
+				self.get_composite_data(group,curr_dict)
+				self.plot_cdfs(group,str(100*(final_cand[1])) + "_" + str(100*(final_cand[2])),dest_dir)
+
+			path = os.path.join(dest_dir, folder_name + "_Plot.jpg")
+			self.cluster_object.save_plot(path)
+
+		if self.counter == False:
+			print "Finding final canidate..."
+			data = self.test_significance() 
+			folder_name = sheet_name
+			script_dir = os.path.dirname(os.path.abspath(folder_name))
+			dest_dir = os.path.join(script_dir, folder_name)
+
+			try:
+				os.makedirs(dest_dir)
+			except OSError:
+				pass # already exists
+
+			for group in data:
+				#print group
+				curr_regime = data[group]
+				m = curr_regime.keys()
+				max_score = max(m, key = lambda x:x[2])
+				#print 'max_score: ' + str(max_score)
+				poss_candidate = []
+				other = []
+				
+				for i in range(len(m)):
+					curr_key = m[i]
+					if curr_key[2] == max_score[2]:
+						poss_candidate.append(curr_key)
+					else:
+						other.append(curr_key)
+
+				#print "Max Score",max_score
+				#print poss_candidate
+				final_cand = min(poss_candidate, key = lambda x:x[1])
+
+				#print final_cand
+				curr_dict = curr_regime[final_cand]
+				val = str(final_cand[0])+ "_"+ str(100*(final_cand[1])) + "_" 
+				#print "val_1: " + str(val)
+				results = val
+				self.data_write(curr_dict,val,dest_dir)
+				self.get_composite_data(group,curr_dict)
+				self.plot_cdfs(group,str(100*(final_cand[1])) + "_",dest_dir)
+
+			path = os.path.join(dest_dir, folder_name + "_Plot.jpg")
+			self.cluster_object.save_plot(path)
 
 	def get_composite_data(self,group,test_dic):
 		cdf = {}
@@ -384,34 +506,60 @@ class Convolve:
 		self.comp_cdfs[group] = cdf
 
 	def data_write(self,dict_,val,dest_dir):
-		print "Saving Data as " + val + str(dict_.values()[0][10]) + ".xls ..."
-		wb = Workbook()
-		links_name  = ''
-		for link in self.segment:
-			if type(link) == tuple:
-				link = link[0]
-			links_name = links_name + link + '_'
-		results = wb.add_sheet(links_name)
-		self.write_along_column(results, ['Percentile','composite_tt','tt_39_11','tt_comon','tt_conv',
-			'perc_error_comp','perc_error_conv','perc_comon','rmse_1',
-			'rmse_2','rmse_3','s1','s2','s3'], 0)
+		if self.counter:
+			print "Saving Data as " + val + str(dict_.values()[0][13]) + ".xls ..."
+			wb = Workbook()
+			links_name  = ''
+			for link in self.segment:
+				if type(link) == tuple:
+					link = link[0]
+				links_name = links_name + link + '_'
+			results = wb.add_sheet(links_name)
+			self.write_along_column(results, ['Percentile','composite_tt','tt_39_11','tt_comon','tt_conv', 'tt_count',
+				'perc_error_comp','perc_error_conv','perc_comon','perc_count','rmse_1',
+				'rmse_2','rmse_3', 'rmse_4', 's1','s2','s3', 's4'], 0)
 
-		row = 1
-		for key in sorted(dict_.keys()):
-			data = [key] + dict_[key]
-			self.write_along_column(results, data, row)
-			row += 1
+			row = 1
+			for key in sorted(dict_.keys()):
+				data = [key] + dict_[key]
+				self.write_along_column(results, data, row)
+				row += 1
 
-		path = os.path.join(dest_dir, 'Cluster'+ val + str(dict_.values()[0][10])+'.xls')
-		wb.save(path)
+			path = os.path.join(dest_dir, 'Cluster'+ val + str(dict_.values()[0][13])+'.xls')
+			wb.save(path)
 
-	def main(self, sheet_name,type_ = 'time' ):
+		if self.counter == False:
+			print "Saving Data as " + val + str(dict_.values()[0][10]) + ".xls ..."
+			wb = Workbook()
+			links_name  = ''
+			for link in self.segment:
+				if type(link) == tuple:
+					link = link[0]
+				links_name = links_name + link + '_'
+			results = wb.add_sheet(links_name)
+			self.write_along_column(results, ['Percentile','composite_tt','tt_39_11','tt_comon','tt_conv',
+				'perc_error_comp','perc_error_conv','perc_comon', 'rmse_1',
+				'rmse_2','rmse_3', 's1','s2','s3'], 0)
+
+			row = 1
+			for key in sorted(dict_.keys()):
+				data = [key] + dict_[key]
+				self.write_along_column(results, data, row)
+				row += 1
+
+			path = os.path.join(dest_dir, 'Cluster'+ val + str(dict_.values()[0][10])+'.xls')
+			wb.save(path)
+
+	def main(self, sheet_name,type_ = 'time', counter = True ):
+		self.counter = counter
 		#self.get_times_data(type_)
 		self.get_cluster_data()
 		self.get_link_cdfs()
 		self.actual_time_cdf()
 		self.route_cdf_comonotonic()
 		self.route_cdf_convolve()
+		if self.counter:
+			self.route_cdf_countermonotonic()
 		#self.final_canidate('Beatty_Backward_Final_')
 		#print "Done"
 		#return self.test_significance()
@@ -423,12 +571,18 @@ class Convolve:
 		comp = self.get_perc_list(perc, self.comp_cdfs[group])
 		como = self.get_perc_list(perc,self.comon_cdfs[group])
 		convo = self.get_perc_list(perc, self.convo_cdfs[group])
+		if self.counter:
+			count = self.get_perc_list(perc, self.count_cdfs[group])
 		plt.plot(actual, perc, 'b', label = "Actual CDF")
 		plt.plot(comp, perc, 'g', label = "Composite CDF")
 		plt.plot(como, perc, 'm', label = "Comonotonic CDF")
 		plt.plot(convo,perc, 'r', label = "Convolution CDF")
+		if self.counter:
+			plt.plot(count,perc, 'y', label = "Countermonotonic CDF")
 		plt.legend(loc = 4)
-		path = os.path.join(dest_dir, str(group) +"_"+ str(val) + "_CDF_plot.jpg")
+		path = os.path.join(dest_dir, str(group) +"_"+ val + "_CDF_plot.jpg")
+		plt.xlabel("Time(minutes)")
+		plt.ylabel("Percentile")
 		plt.savefig(path)
 		plt.show()
 
@@ -440,10 +594,13 @@ class Convolve:
 
 
 	def write_along_column(self,sheet, vals, r, c = 0):
+		#print "sheet", sheet
+		#print "vals" , vals
+		#print "r", r
 		for i in xrange(len(vals)):
 			sheet.write(r, c+i, vals[i])
 
-#da = Convolve(['139', '140', ('128', '130'), ('120', '129')])
-#da.main('OneWay')
+da = Convolve(['139', '140', ('128', '130'), ('120', '129')])
+da.main('Penn_Negative')
 
 

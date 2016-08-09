@@ -21,14 +21,14 @@ class Cluster:
 	def data_read(self):
 		for group in self.data:
 			if type(self.data[group]) == list:
-				if all(item >= -.01 for item in self.data[group]):
+				if all(item >= -1 for item in self.data[group]):
 					self.rvalues.append(self.data[group])
 					self.groups.append(group)
 				else:
 					#print "thrown out: ", self.data[group]
 					self.negative_values.append((group,self.data[group]))
 			else:
-				if self.data[group] >= -.01:
+				if self.data[group] >= -1:
 					self.rvalues.append(self.data[group])
 					self.groups.append(group)
 				else:

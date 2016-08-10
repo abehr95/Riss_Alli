@@ -130,7 +130,7 @@ class Cluster:
 
 	def main(self):
 		self.data_read()
-		clusters, group_clusters = self.kmeans(self.rvalues,self.groups,6,0.000000000001)
+		clusters, group_clusters = self.kmeans(self.rvalues,self.groups,5,0.000000000001)
 		self.rclusters, self.gclusters = clusters , group_clusters
 		#print "clusters: " + str(clusters)
 		#print "group_clusters: " + str(group_clusters)
